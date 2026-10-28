@@ -8,16 +8,15 @@ Das Programm braucht keinen Server, keine Anmeldung und keine Installation. Alle
 
 - `index.html` – das Programm
 - `fonts/` – die Schriften (Atkinson Hyperlegible, Bricolage Grotesque, SIL Open Font License)
-- `lib/jspdf.umd.min.js` – erzeugt den Bericht als PDF (jsPDF, MIT-Lizenz)
 
-Lade immer **alle** Dateien und beide Ordner hoch, sonst fehlen Schrift oder PDF-Funktion.
+Lade immer **alle** Dateien und den Ordner `fonts` hoch, sonst fehlt die Schrift. Die PDF-Funktion steckt direkt in `index.html`.
 
 ## Auf GitHub veröffentlichen (GitHub Pages)
 
 1. Bei github.com anmelden und oben rechts auf **+ → New repository** klicken.
 2. Einen Namen eingeben, z. B. `mission-teller-2050`, **Public** wählen und **Create repository** klicken.
 3. Auf der neuen Seite den Link **uploading an existing file** anklicken.
-4. Den Inhalt des entpackten Ordners (`index.html`, `README.md`, `fonts`, `lib`) in das Fenster ziehen und unten **Commit changes** klicken.
+4. Den Inhalt des entpackten Ordners (`index.html`, `README.md`, `fonts`) in das Fenster ziehen und unten **Commit changes** klicken.
 5. Im Repository auf **Settings → Pages** gehen.
 6. Unter **Build and deployment** bei **Source** „Deploy from a branch“ wählen, bei **Branch** `main` und `/ (root)` einstellen und **Save** klicken.
 7. Nach ein bis zwei Minuten erscheint oben auf der Pages-Seite die Adresse, z. B.
