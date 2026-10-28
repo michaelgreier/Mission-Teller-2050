@@ -4,9 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>[hidden]{display:none!important}body{margin:0}img{max-width:100%}</style>
+<style>
+@font-face{font-family:"Atkinson Hyperlegible";font-style:normal;font-weight:400;font-display:swap;src:url(fonts/atkinson-hyperlegible-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"Atkinson Hyperlegible";font-style:italic;font-weight:400;font-display:swap;src:url(fonts/atkinson-hyperlegible-latin-400-italic.woff2) format("woff2")}
+@font-face{font-family:"Atkinson Hyperlegible";font-style:normal;font-weight:700;font-display:swap;src:url(fonts/atkinson-hyperlegible-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"Bricolage Grotesque";font-style:normal;font-weight:600;font-display:swap;src:url(fonts/bricolage-grotesque-latin-600-normal.woff2) format("woff2")}
+@font-face{font-family:"Bricolage Grotesque";font-style:normal;font-weight:800;font-display:swap;src:url(fonts/bricolage-grotesque-latin-800-normal.woff2) format("woff2")}
+</style>
 <title>Mission Teller 2050</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
 <style>
 /* Layout: ein Arbeitsheft – schmale Lesespalte, oben eine Stationsleiste, jede Station eine Seite */
 :root{
@@ -125,6 +130,23 @@ table.rep th,table.rep td{border-bottom:1px solid var(--rule);text-align:left;pa
 .amp{display:inline-block;width:14px;height:14px;border-radius:50%;vertical-align:-2px;margin-right:6px}
 .codebox{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;word-break:break-all;min-height:90px}
 @media (prefers-reduced-motion: reduce){.progress i{transition:none}}
+
+/* Leitfragen-Werkstatt */
+.crit{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:10px}
+.crit div{border:1px solid var(--rule);border-radius:12px;padding:12px;background:var(--paper);display:flex;flex-direction:column;gap:4px}
+.crit b{font-family:var(--f-display);font-size:18px}
+.crit span{font-size:15px;color:var(--ink-soft)}
+.prac{display:flex;flex-direction:column;gap:10px}
+.prac .item{border:1px solid var(--rule);border-radius:12px;padding:12px 14px;background:var(--paper);display:flex;flex-direction:column;gap:8px}
+.prac .item q{font-weight:700;quotes:"„" "“"}
+.prac .item .fb{font-size:15px}
+.stepno{font-family:var(--f-display);font-weight:800;color:var(--carrot);font-size:15px;letter-spacing:.06em;text-transform:uppercase}
+.warn{color:var(--berry);font-size:15px}
+.ops summary{cursor:pointer;line-height:1.5}
+.ops dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:8px 16px;margin:12px 0 0}
+.ops dl div{display:flex;flex-direction:column;gap:2px}
+.ops dt{font-weight:700}
+.ops dd{margin:0;font-size:15px;color:var(--ink-soft)}
 </style>
 
 </head>
@@ -139,22 +161,24 @@ table.rep th,table.rep td{border-bottom:1px solid var(--rule);text-align:left;pa
   <main id="view"></main>
 </div>
 
+<script src="lib/jspdf.umd.min.js"></script>
 <script>
 (function(){
 "use strict";
 const KEY="teller2050.v1";
-const blank=()=>({name:"",members:"",rahmen:false,film:false,questions:[],leit:"",leitParts:{},leitDone:false,prog1:"",prog2:"",pre:null,post:null,wahl:"",wahl2:"",pk:{}});
+const blank=()=>({name:"",members:"",rahmen:false,film:false,questions:[],prac:{},group:[],ober:"",leit:"",selfcheck:[false,false,false,false],leitDone:false,compare:"",prog1:"",pre:null,wahl:"",wahl2:"",pk:{}});
 let S=blank();
 try{const raw=localStorage.getItem(KEY);if(raw)S=Object.assign(blank(),JSON.parse(raw));}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const md=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
 const today=()=>new Date().toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"});
 
 /* ---------- Inhalte ---------- */
 const BAUSTEINE={
   P1:"P1 Warum essen wir? (Nährstoffe)",P2:"P2 Was passiert mit dem Essen? (Verdauung)",
-  W1:"W1 Esskulturen weltweit",W2:"W2 Werbung und Ernährung",W3:"W3 Wenn Essen krank macht",W4:"W4 Nachhaltig essen",X:"Passt nirgends / Frage an die Lehrkraft"
+  W1:"W1 Esskulturen weltweit",W2:"W2 Werbung und Ernährung",W3:"W3 Wenn Essen krank macht",W4:"W4 Nachhaltig essen",X:"Passt zu keinem Baustein"
 };
 const WAHL=[
   {id:"W1",t:"Esskulturen",q:"Wie essen andere Volksgruppen?",z:"Welche Esskulturen könnten Vorbild für die Zukunft sein?"},
@@ -163,34 +187,55 @@ const WAHL=[
   {id:"W4",t:"Nachhaltig essen",q:"Wie essen wir, ohne der Erde zu schaden?",z:"Wie ernähren wir fast 10 Milliarden Menschen?"}
 ];
 const PACKS=[
-  {id:"1a",bs:"P1",t:"Nährstoffe und ihre Aufgaben",box:"Box P1",need:["0"],todo:["Lies im bioskop die Seiten zu den Nährstoffen.","Fülle für jeden Nährstoff einen Steckbrief aus: Wo steckt er drin? Wofür braucht ihn der Körper?","Ordne zu: Baustoff, Betriebsstoff (Energie) oder Schutz- und Reglerstoff."]},
-  {id:"1b",bs:"P1",t:"Nährstoffe nachweisen",box:"Versuchsbox P1",need:["1a"],todo:["Fettfleckprobe: Reibe Lebensmittel auf Papier und halte es gegen das Licht.","Zucker-Teststreifen: Teste Saft, Wasser und Zuckerlösung.","Schau das Video zum Stärkenachweis mit Iod (QR-Code) und fülle den Beobachtungsbogen aus.","Etiketten-Detektiv: Wie viel Zucker, Fett und Eiweiß stecken in den Verpackungen der Box?"]},
-  {id:"2a",bs:"P2",t:"Der Weg der Nahrung",box:"Box P2",need:["1a"],todo:["Lege den Verdauungstrakt mit den Organkarten und vergleiche mit dem Lösungsfoto.","Lege die Funktionskarten an das richtige Organ.","Lege mit der Schnur nach, wie lang dein Verdauungstrakt ungefähr ist."]},
-  {id:"2b",bs:"P2",t:"Enzyme und Darmzotten",box:"Versuchsbox P2",need:["2a"],todo:["Puzzle zum Schlüssel-Schloss-Modell: Wie zerlegen Enzyme die Nährstoffe?","Modellversuch: Vergleiche glattes und gefaltetes Papier. Was hat das mit den Darmzotten zu tun?","Magenmodell im Gefrierbeutel mit Zwieback und Wasser.","Videoversuch Stärkeabbau durch Speichel: Beobachtungsbogen ausfüllen."]},
-  {id:"Wa",bs:"W",t:"Wahlbaustein: Recherche",box:"Box zu deinem Wahlbaustein",need:["1b","2b"],todo:["Nimm die Leitfragen-Karte deines Wahlbausteins.","Recherchiere im Material der Box und auf den Seiten der QR-Codes.","Notiere die wichtigsten Ergebnisse und deine Quellen."]},
-  {id:"Wb",bs:"W",t:"Wahlbaustein: Ergebnis zeigen",box:"Box zu deinem Wahlbaustein",need:["Wa"],todo:["Stelle dein Ergebnis aufs Padlet (Text, Foto, Quellen).","Gestalte ein Ausstellungsstück: Plakat, Infokarte oder ein Mitmach-Element.","Schreibe eine Prognose: Was bedeutet dein Thema für die Ernährung im Jahr 2050?"]}
+  {id:"1a",bs:"P1",t:"Nährstoffe und ihre Aufgaben",box:"Box P1",need:["0"],todo:["**Nenne** die drei Grundnährstoffe und vier weitere Bestandteile der Nahrung. Nutze dazu die Seiten zu den Nährstoffen im bioskop.", "**Beschreibe** für jeden Grundnährstoff in einem Steckbrief, in welchen Lebensmitteln er vorkommt und welche Aufgabe er im Körper hat.", "**Ordne** die Nährstoffe den Gruppen Baustoff, Betriebsstoff (Energie) sowie Schutz- und Reglerstoff **zu** und **begründe** jede Zuordnung."]},
+  {id:"1b",bs:"P1",t:"Nährstoffe nachweisen",box:"Versuchsbox P1",need:["1a"],todo:["**Führe** die Fettfleckprobe nach Anleitung mit drei Lebensmitteln **durch** und **protokolliere** deine Beobachtungen.", "**Führe** den Test mit Zucker-Teststreifen an Saft, Wasser und Zuckerlösung **durch** und **werte** die Ergebnisse **aus**.", "**Beschreibe** die Beobachtungen im Video zum Stärkenachweis mit Iod (QR-Code) und **deute** sie.", "**Vergleiche** mithilfe der Nährwertangaben auf zwei Verpackungen aus der Box den Gehalt an Zucker, Fett und Eiweiß."]},
+  {id:"2a",bs:"P2",t:"Der Weg der Nahrung",box:"Box P2",need:["1a"],todo:["**Ordne** die Organkarten in der Reihenfolge, in der die Nahrung sie durchläuft.", "**Ordne** jedem Organ die passende Funktionskarte **zu**.", "**Zeichne** den Verdauungstrakt vereinfacht in deine Mappe und **beschreibe** daneben den Weg der Nahrung vom Mund bis zum Dickdarm.", "**Ermittle** mit der Schnur die ungefähre Länge deines Verdauungstrakts und **vergleiche** sie mit deiner Körpergröße."]},
+  {id:"2b",bs:"P2",t:"Verdauung im Modell",box:"Versuchsbox P2",need:["2a"],todo:["**Führe** den Modellversuch zum Magen mit Zwieback und Wasser im Gefrierbeutel **durch** und **beschreibe** deine Beobachtung.", "**Erkläre**, welche Aufgabe des Magens das Modell zeigt.", "**Vergleiche** im Modellversuch glattes und gefaltetes Papier gleicher Länge: Welches hat die größere Fläche?", "**Erkläre** mithilfe des Modells, warum der Dünndarm innen stark gefaltet ist. **Nenne** einen Unterschied zwischen Modell und echtem Dünndarm."]},
+  {id:"Wa",bs:"W",t:"Wahlbaustein: Recherche",box:"Box zu deinem Wahlbaustein",need:["1b","2b"],todo:["**Nenne** die Leitfrage deines Wahlbausteins (Leitfragen-Karte) und **entwickle** zwei eigene Teilfragen dazu.", "**Ermittle** mit dem Material der Box und den Seiten der QR-Codes Antworten auf deine Teilfragen.", "**Fasse** deine wichtigsten Ergebnisse mit Quellenangaben **zusammen**."]},
+  {id:"Wb",bs:"W",t:"Wahlbaustein: Ergebnis zeigen",box:"Box zu deinem Wahlbaustein",need:["Wa"],todo:["**Stelle** dein Ergebnis in deiner Mappe übersichtlich **dar**: Text, Skizze und Quellen.", "**Entwickle** ein Ausstellungsstück: Plakat, Infokarte oder ein Mitmach-Element.", "**Beurteile**, was dein Thema für die Ernährung im Jahr 2050 bedeutet, und **begründe** dein Urteil mit zwei Argumenten."]}
 ];
-const CHECKS=["Ich habe alle Aufgaben bearbeitet.","Ich habe mit der Lösungskarte verglichen und Fehler verbessert.","Mein Ergebnis steht auf dem Padlet."];
+const OPERATOREN=[
+  ["nennen","Elemente, Fakten oder Begriffe ohne Erklärung aufzählen."],
+  ["beschreiben","Strukturen oder Abläufe in eigenen Worten und mit Fachbegriffen genau wiedergeben."],
+  ["ordnen, zuordnen","Dinge nach einem Merkmal sortieren oder einander passend zuweisen."],
+  ["vergleichen","Gemeinsamkeiten und Unterschiede herausfinden."],
+  ["durchführen","Einen Versuch nach Anleitung oder Plan ausführen."],
+  ["protokollieren","Ablauf und Beobachtungen eines Versuchs genau aufschreiben oder zeichnen."],
+  ["auswerten","Ergebnisse miteinander in Beziehung setzen und daraus eine Aussage ableiten."],
+  ["deuten","Eine Beobachtung erklären und in einen Zusammenhang einordnen."],
+  ["zeichnen","Eine genaue und übersichtliche Darstellung von Strukturen anfertigen."],
+  ["ermitteln","Ein Ergebnis oder einen Zusammenhang herausfinden und angeben."],
+  ["erklären","Einen Sachverhalt nachvollziehbar machen, indem man Ursachen und Regeln nennt."],
+  ["begründen","Eine Aussage mit Argumenten, Regeln oder Ursachen stützen."],
+  ["prüfen","Aussagen an Fakten oder Merkmalen messen und Widersprüche aufdecken."],
+  ["entwickeln","Ideen schrittweise zu einer Frage, einem Modell oder einem Produkt ausbauen."],
+  ["zusammenfassen","Das Wesentliche kurz und in eigenen Worten wiedergeben."],
+  ["darstellen","Sachverhalte strukturiert und mit Fachsprache aufzeigen."],
+  ["Hypothese aufstellen","Eine begründete Vermutung formulieren."],
+  ["beurteilen","Mit Fachwissen ein eigenes Urteil bilden und begründen."]
+];
+const CHECKS=["Ich habe alle Aufgaben bearbeitet.","Ich habe meine Ergebnisse in meiner Mappe gesichert.","Ich habe ins Lerntagebuch geschrieben, was ich gelernt habe und was noch offen ist."];
 
 const QUIZ=[
-  {q:"Welcher Nährstoff liefert pro Gramm am meisten Energie?",o:["Kohlenhydrate","Fett","Eiweiß","Vitamine"],a:1,bs:"P1",why:"Fett liefert etwa doppelt so viel Energie wie Kohlenhydrate oder Eiweiß."},
-  {q:"Welcher Nährstoff ist vor allem ein Baustoff, zum Beispiel für Muskeln?",o:["Eiweiß","Zucker","Ballaststoffe","Wasser"],a:0,bs:"P1",why:"Aus Eiweiß baut der Körper Muskeln, Haut und Haare."},
-  {q:"Du gibst Iodlösung auf eine Kartoffelscheibe. Sie färbt sich blauschwarz. Was weist du nach?",o:["Fett","Traubenzucker","Stärke","Eiweiß"],a:2,bs:"P1",why:"Iod färbt Stärke blauschwarz."},
-  {q:"Wo beginnt die Verdauung der Stärke?",o:["im Magen","im Mund","im Dünndarm","im Dickdarm"],a:1,bs:"P2",why:"Der Speichel im Mund enthält ein Enzym, das Stärke zerlegt. Deshalb wird Brot beim langen Kauen süß."},
-  {q:"Wo werden die meisten Nährstoffe ins Blut aufgenommen?",o:["in der Speiseröhre","im Magen","im Dünndarm","im Dickdarm"],a:2,bs:"P2",why:"Im Dünndarm gelangen die zerlegten Nährstoffe durch die Darmwand ins Blut."},
-  {q:"Warum ist die Innenwand des Dünndarms mit Darmzotten gefaltet?",o:["damit die Nahrung schneller rutscht","damit die Oberfläche größer wird","damit der Darm kürzer sein kann","damit keine Bakterien hineinkommen"],a:1,bs:"P2",why:"Eine größere Oberfläche kann mehr Nährstoffe gleichzeitig aufnehmen."},
-  {q:"Was machen Verdauungsenzyme?",o:["Sie zerlegen große Nährstoffe in kleine Bausteine.","Sie geben der Nahrung Geschmack.","Sie töten alle Bakterien ab.","Sie speichern Energie im Körper."],a:0,bs:"P2",why:"Enzyme passen wie ein Schlüssel ins Schloss und zerlegen Nährstoffe."},
-  {q:"Welches Lebensmittel verursacht pro Kilogramm meist die meisten Treibhausgase?",o:["Kartoffeln","Äpfel","Linsen","Rindfleisch"],a:3,bs:"W",why:"Bei Rindfleisch entstehen pro Kilogramm viel mehr Treibhausgase als bei pflanzlichen Lebensmitteln."}
+  {q:"Welcher Nährstoff liefert pro Gramm am meisten Energie?",o:["Kohlenhydrate","Fett","Eiweiß","Vitamine"],a:1,bs:"P1"},
+  {q:"Welcher Nährstoff ist vor allem ein Baustoff, zum Beispiel für Muskeln?",o:["Eiweiß","Zucker","Ballaststoffe","Wasser"],a:0,bs:"P1"},
+  {q:"Du gibst Iodlösung auf eine Kartoffelscheibe. Sie färbt sich blauschwarz. Was weist du nach?",o:["Fett","Traubenzucker","Stärke","Eiweiß"],a:2,bs:"P1"},
+  {q:"Was passiert im Magen?",o:["Die Nahrung wird gekaut.","Die Nahrung wird mit Magensaft durchmischt.","Die Nährstoffe gelangen ins Blut.","Der Nahrung wird Wasser entzogen."],a:1,bs:"P2"},
+  {q:"Wo werden die meisten Nährstoffe ins Blut aufgenommen?",o:["in der Speiseröhre","im Magen","im Dünndarm","im Dickdarm"],a:2,bs:"P2"},
+  {q:"Warum ist die Innenwand des Dünndarms mit Darmzotten gefaltet?",o:["damit die Nahrung schneller rutscht","damit die Oberfläche größer wird","damit der Darm kürzer sein kann","damit keine Bakterien hineinkommen"],a:1,bs:"P2"},
+  {q:"Welches Organ gehört nicht zum Verdauungstrakt?",o:["Speiseröhre","Magen","Lunge","Dünndarm"],a:2,bs:"P2"},
+  {q:"Welches Lebensmittel verursacht pro Kilogramm meist die meisten Treibhausgase?",o:["Kartoffeln","Äpfel","Linsen","Rindfleisch"],a:3,bs:"W"}
 ];
 
 /* ---------- Navigation ---------- */
+function allPacksDone(){return PACKS.every(p=>isDone(p.id));}
 const STEPS=[
   {id:"start",t:"Start",done:()=>!!S.name&&S.rahmen},
   {id:"film",t:"Film",done:()=>S.film},
   {id:"fragen",t:"Fragen",done:()=>S.questions.length>=3&&S.questions.every(q=>q.cat)},
-  {id:"leitfrage",t:"Leitfrage",done:()=>S.leitDone},
+  {id:"leitfrage",t:"Leitfrage",done:()=>S.leitDone&&S.prog1.trim().length>15},
   {id:"vortest",t:"Vortest",done:()=>!!S.pre},
-  {id:"laufzettel",t:"Laufzettel",done:()=>!!S.post},
+  {id:"laufzettel",t:"Laufzettel",done:()=>allPacksDone()},
   {id:"bericht",t:"Bericht",done:()=>false}
 ];
 let cur="start";
@@ -211,7 +256,7 @@ const V={};
 V.start=()=>`<div class="stack">
  <section class="sheet stack">
   <h2>Willkommen zur Freiarbeit Ernährung</h2>
-  <p>Dieses Programm führt dich durch die Freiarbeit. Es zeigt dir einen kurzen Film, hilft dir, Fragen zu sammeln und eure Leitfrage zu entwickeln, und ist gleichzeitig dein Laufzettel für alle Stationen.</p>
+  <p>Dieses Programm führt dich durch die Freiarbeit. Es zeigt dir einen kurzen Film, hilft dir, Fragen zu sammeln und eine Leitfrage zu entwickeln, und ist gleichzeitig dein Laufzettel für alle Stationen.</p>
   <div class="grid2">
    <label class="field" for="f-name">Dein Name oder Kürzel<input type="text" id="f-name" value="${esc(S.name)}" autocomplete="off" maxlength="40" placeholder="z. B. Lena K."></label>
    <label class="field" for="f-members">Partner oder Gruppe <span class="hint">freiwillig, nur Vornamen oder Kürzel</span><input type="text" id="f-members" value="${esc(S.members)}" autocomplete="off" maxlength="80" placeholder="z. B. mit Tom und Ali"></label>
@@ -221,25 +266,21 @@ V.start=()=>`<div class="stack">
   <h2 id="rahmen-h">So läuft die Freiarbeit</h2>
   <div class="grid2">
    <div class="fact"><span class="eyebrow">Zeitraum</span><b>4 Wochen</b><span>je 2 Biologiestunden pro Woche, also 8 Stunden</span></div>
-   <div class="fact"><span class="eyebrow">Pensum</span><b>8 Pakete</b><span>Start, 4 Pflichtpakete, 2 Wahlpakete, Ziel. Ein Paket dauert etwa 45 Minuten.</span></div>
-   <div class="fact"><span class="eyebrow">Fächerwahl</span><b>3 Fächer</b><span>Biologie und zwei andere Fächer bieten gleichzeitig Freiarbeit an. Du entscheidest jede Stunde, woran du arbeitest.</span></div>
-   <div class="fact"><span class="eyebrow">Ende</span><b>Nachtest</b><span>Am Ende vergleichst du deinen Nachtest mit dem Vortest und zeigst deinen Bericht.</span></div>
+   <div class="fact"><span class="eyebrow">Pensum</span><b>7 Pakete</b><span>Start, 4 Pflichtpakete und 2 Wahlpakete. Ein Paket dauert etwa 45 Minuten.</span></div>
+   <div class="fact"><span class="eyebrow">Fächerwahl</span><b>Biologie, Kunst, Englisch</b><span>Alle drei Fächer bieten gleichzeitig Freiarbeit an. Du entscheidest jede Stunde, woran du arbeitest.</span></div>
+   <div class="fact"><span class="eyebrow">Ende</span><b>Lernzielkontrolle</b><span>Am Ende der vier Wochen schreibst du eine Lernzielkontrolle.</span></div>
   </div>
   <h3>Wichtig, weil keine Biologielehrkraft im Raum ist</h3>
   <ul class="clean">
-   <li>Plane selbst: Bis zum Ende der 4 Wochen müssen alle Biologie-Pakete erledigt sein. Wenn du andere Fächer wählst, musst du Biologie später nachholen.</li>
+   <li>Plane selbst: Bis zum Ende der 4 Wochen müssen alle Biologie-Pakete erledigt sein. Wenn du Kunst oder Englisch wählst, musst du Biologie später nachholen.</li>
    <li>Alles, was du brauchst, liegt in den beschrifteten Boxen im Biologie-Regal. Nimm immer nur eine Box und bringe sie vollständig zurück.</li>
-   <li>Wenn du nicht weiterkommst: erst die Hilfekarte, dann das Erklärvideo, dann jemanden aus der Expertenliste fragen. Bleibt die Frage offen, poste sie in der Padlet-Spalte „Fragen an die Biologielehrkraft“ und mach mit dem nächsten Teil weiter.</li>
-   <li>Vergleiche jedes Paket mit der Lösungskarte und verbessere deine Fehler selbst.</li>
+   <li>Wenn du nicht weiterkommst: Jedes Modul hat eigene Hilfen in seiner Box. Nutze sie, bevor du andere fragst.</li>
+   <li>Bleibt eine Frage offen, schreibe sie in dein Lerntagebuch und arbeite am nächsten Teil weiter. Deine offenen Fragen stehen später in deinem Bericht für die Biologielehrkraft.</li>
    <li>Versuche nur mit dem Material aus der Versuchsbox und genau nach Anleitung. Nichts probieren oder essen, außer die Anleitung erlaubt es ausdrücklich.</li>
    <li>Die Aufsicht hilft bei Boxen und Ordnung, aber nicht beim Fachinhalt.</li>
   </ul>
   <h3>So wird bewertet</h3>
-  <ul class="clean">
-   <li>Nachtest: 40 %</li>
-   <li>Padlet-Beiträge und Ausstellungsstück: 40 %</li>
-   <li>Arbeitsprozess laut Laufzettel und Lerntagebuch: 20 %</li>
-  </ul>
+  <p>Deine Arbeit in der Freiarbeit zählt mit <b>20 % zu deiner mündlichen Note</b>.</p>
   <div class="note"><b>Dein Fortschritt wird nur auf diesem Gerät gespeichert.</b> Wenn du an einem anderen Tablet weiterarbeitest, nimm deinen Fortschrittscode mit (unter „Bericht“).</div>
   <div class="checks"><label for="f-rahmen"><input type="checkbox" id="f-rahmen" ${S.rahmen?"checked":""}> Ich habe die Regeln gelesen und verstanden.</label></div>
   <div class="row"><button class="btn" type="button" id="b-start" ${S.name&&S.rahmen?"":"disabled"}>Weiter zum Film</button></div>
@@ -256,7 +297,7 @@ V.start.after=()=>{
 V.film=()=>`<div class="stack">
  <section class="sheet stack">
   <h2>Der Einstiegsfilm</h2>
-  <p>Schau dir den kurzen Trickfilm an. Achte darauf, welche Fragen dir dabei einfallen. Du kannst ihn so oft ansehen, wie du willst.</p>
+  <p>Schau dir den kurzen Trickfilm an. Achte darauf, welche Fragen dir dabei einfallen. Du kannst ihn so oft ansehen, wie du willst. Mit Kopfhörern hörst du die Musik am besten.</p>
   <div class="film">
    <svg id="stage" viewBox="0 0 640 360" role="img" aria-label="Trickfilm im Stop-Motion-Stil zur Zukunft der Ernährung"></svg>
    <p class="cap" id="cap" aria-live="polite"></p>
@@ -264,13 +305,32 @@ V.film=()=>`<div class="stack">
     <button type="button" id="f-prev" aria-label="Szene zurück">◀</button>
     <button type="button" id="f-play">▶ Abspielen</button>
     <button type="button" id="f-next" aria-label="Szene vor">▶▶</button>
+    <label for="f-music"><input type="checkbox" id="f-music" checked> Musik</label>
     <label for="f-voice"><input type="checkbox" id="f-voice"> Vorlesen</label>
     <div class="dots" id="dots" aria-hidden="true"></div>
    </div>
   </div>
-  <div class="row"><button class="btn" type="button" id="b-film" ${S.film?"":"disabled"}>Weiter zu meinen Fragen</button><span class="meta" id="film-hint" style="color:var(--ink-soft)">${S.film?"":"Der Knopf wird frei, sobald du den Film bis zum Ende gesehen hast."}</span></div>
+  <div class="row"><button class="btn" type="button" id="b-film" ${S.film?"":"disabled"}>Weiter zu meinen Fragen</button><span id="film-hint" style="color:var(--ink-soft)">${S.film?"":"Der Knopf wird frei, sobald du den Film bis zum Ende gesehen hast."}</span></div>
  </section>
 </div>`;
+
+/* Musik: eine kleine, selbst erzeugte Melodie (Web Audio), startet erst nach Klick auf Abspielen */
+const MEL=[[72,null,76,79,76,null,74,72],[69,null,72,76,74,72,69,null],[65,69,72,null,74,72,69,null],[67,71,74,null,79,77,74,71]];
+const BASS=[48,45,41,43];
+const Music={ctx:null,out:null,noise:null,timer:null,step:0,next:0,
+  start(){
+    try{
+      if(!this.ctx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;this.ctx=new AC();this.out=this.ctx.createGain();this.out.gain.value=.14;this.out.connect(this.ctx.destination);
+        const len=this.ctx.sampleRate*.05,buf=this.ctx.createBuffer(1,len,this.ctx.sampleRate),d=buf.getChannelData(0);for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*(1-i/len);this.noise=buf;}
+      this.ctx.resume();this.next=this.ctx.currentTime+.06;clearInterval(this.timer);this.timer=setInterval(()=>this.sched(),50);
+    }catch(e){}
+  },
+  stop(){clearInterval(this.timer);this.timer=null;},
+  sched(){const c=this.ctx,dur=60/116/2;while(this.next<c.currentTime+.2){this.play(this.step,this.next);this.next+=dur;this.step=(this.step+1)%32;}},
+  tone(m,t,len,type,vol){const c=this.ctx,o=c.createOscillator(),g=c.createGain();o.type=type;o.frequency.value=440*Math.pow(2,(m-69)/12);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.012);g.gain.exponentialRampToValueAtTime(.001,t+len);o.connect(g);g.connect(this.out);o.start(t);o.stop(t+len+.05);},
+  hat(t){const c=this.ctx,s=c.createBufferSource(),f=c.createBiquadFilter(),g=c.createGain();s.buffer=this.noise;f.type="highpass";f.frequency.value=6000;g.gain.value=.25;s.connect(f);f.connect(g);g.connect(this.out);s.start(t);},
+  play(i,t){const bar=i>>3,k=i&7,m=MEL[bar][k];if(m)this.tone(m,t,.24,"triangle",.55);if(k%4===0)this.tone(BASS[bar],t,.5,"sine",.7);if(k%2===1)this.hat(t);}
+};
 
 const FPS=8;
 let film={scene:0,frame:0,timer:null,playing:false};
@@ -280,12 +340,32 @@ const J=(a=1.6)=>rnd()*a;
 const piece=(x,y,inner,r=0)=>`<g transform="translate(${(x+J()).toFixed(1)},${(y+J()).toFixed(1)}) rotate(${(r+J(1.4)).toFixed(2)})" filter="url(#ps)">${inner}</g>`;
 const ease=t=>t<0?0:t>1?1:1-Math.pow(1-t,3);
 const lerp=(a,b,t)=>a+(b-a)*ease(t);
-const tag=(x,y,txt,col="#FFF6E8")=>piece(x,y,`<rect x="${-txt.length*5.2-10}" y="-15" width="${txt.length*10.4+20}" height="30" rx="4" fill="${col}"/><text x="0" y="6" text-anchor="middle" font-family="Bricolage Grotesque, Trebuchet MS, sans-serif" font-weight="700" font-size="17" fill="#2B2420">${esc(txt)}</text>`,J(4));
+const FONT='font-family="Bricolage Grotesque, Trebuchet MS, sans-serif"';
+const txt=(x,y,t,size=12,col="#2B2420",w=700)=>`<text x="${x}" y="${y}" text-anchor="middle" ${FONT} font-weight="${w}" font-size="${size}" fill="${col}">${esc(t)}</text>`;
+const tag=(x,y,t,col="#FFF6E8",size=17)=>piece(x,y,`<rect x="${-t.length*size*.31-10}" y="-15" width="${t.length*size*.62+20}" height="30" rx="4" fill="${col}"/>${txt(0,6,t,size)}`,J(4));
 const person=(c)=>`<circle cx="0" cy="-16" r="7" fill="${c}"/><rect x="-7" y="-8" width="14" height="18" rx="5" fill="${c}"/>`;
+const sky=(c="#BFE3F2")=>`<rect width="640" height="360" fill="${c}"/>`;
+const sun=(x,y)=>`<circle cx="${x}" cy="${y}" r="26" fill="#F7D154"/>`;
+const wheel=(r,hub="#C9A13B")=>`<circle r="${r}" fill="#2B2420"/><circle r="${r*.45}" fill="${hub}"/><circle r="${r*.15}" fill="#2B2420"/>`;
 const DEFS=`<defs><filter id="ps" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="3" dy="4" stdDeviation="1.6" flood-color="#000" flood-opacity=".28"/></filter><pattern id="kraft" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#C9A06E"/><circle cx="2" cy="3" r=".7" fill="#B98F5E"/><circle cx="6" cy="6" r=".6" fill="#D6B07F"/></pattern></defs>`;
 
 const SCENES=[
- {len:64,cap:"Früher: Sonntags kam bei vielen Familien Braten mit Kartoffeln auf den Tisch. Gekocht wurde vor allem das, was in der Region wuchs.",
+ {len:76,cap:"1960: Auf manchen Bauernhöfen zieht noch ein Pferd den Pflug. Kleine Traktoren kommen gerade auf, viele Menschen arbeiten auf dem Feld.",
+  draw(f){let s=sky()+sun(560,60);
+   s+=`<path d="M0 190 Q120 150 260 180 T640 170 L640 210 L0 210Z" fill="#8FBF6A"/>`;
+   s+=`<rect x="0" y="205" width="640" height="155" fill="#9C7A4E"/>`;
+   const hx=70+f*5.2;
+   for(let i=0;i<5;i++)s+=`<line x1="10" y1="${226+i*26}" x2="${Math.max(10,hx-150+i*6)}" y2="${226+i*26}" stroke="#6E5233" stroke-width="5" stroke-linecap="round"/>`;
+   s+=piece(560,172,`<rect x="-44" y="-30" width="88" height="56" fill="#B23A48"/><path d="M-52 -28 L0 -62 L52 -28Z" fill="#7A2731"/><rect x="-14" y="-4" width="28" height="30" fill="#5A1E25"/>`);
+   s+=piece(470,196,`<rect x="-26" y="-22" width="40" height="22" rx="3" fill="#C8352B"/><rect x="2" y="-40" width="5" height="20" fill="#2B2420"/><g transform="translate(-16,2)">${wheel(16)}</g><g transform="translate(16,6)">${wheel(9)}</g>`);
+   const leg=f%2?6:-6;
+   s+=piece(hx,262,`<path d="M-40 -6 Q-56 6 -48 24" stroke="#4A2C16" stroke-width="6" fill="none"/><rect x="-30" y="6" width="7" height="34" fill="#5E3A1F" transform="rotate(${leg})"/><rect x="-16" y="6" width="7" height="34" fill="#5E3A1F" transform="rotate(${-leg})"/><rect x="18" y="6" width="7" height="34" fill="#5E3A1F" transform="rotate(${leg})"/><rect x="30" y="6" width="7" height="34" fill="#5E3A1F" transform="rotate(${-leg})"/><ellipse rx="46" ry="21" fill="#7A4B2A"/><path d="M30 -10 L50 -44 L66 -38 L48 -2Z" fill="#7A4B2A"/><path d="M48 -48 L78 -38 L74 -26 L50 -34Z" fill="#6A3F22"/><circle cx="62" cy="-38" r="2.5" fill="#2B2420"/><path d="M44 -46 L52 -58 L56 -46Z" fill="#6A3F22"/>`);
+   s+=`<line x1="${(hx-44).toFixed(1)}" y1="262" x2="${(hx-96).toFixed(1)}" y2="268" stroke="#2B2420" stroke-width="3"/>`;
+   s+=piece(hx-104,270,`<path d="M-4 -26 L-34 -48 M-4 -26 L-28 -54" stroke="#6E4A2A" stroke-width="5" stroke-linecap="round"/><path d="M-10 -28 L14 -28 L24 6 L-6 6Z" fill="#8A8F94"/>`);
+   s+=piece(hx-150,236,`<path d="M-12 -40 L12 -40 L8 -32 L-8 -32Z" fill="#5A3A22"/><rect x="-18" y="-46" width="36" height="6" rx="2" fill="#5A3A22"/><circle cx="0" cy="-26" r="9" fill="#E8B48F"/><rect x="-10" y="-16" width="20" height="30" rx="6" fill="#3E6FB0"/><rect x="-9" y="14" width="7" height="24" fill="#4A3A2A" transform="rotate(${leg/2})"/><rect x="2" y="14" width="7" height="24" fill="#4A3A2A" transform="rotate(${-leg/2})"/><path d="M8 -8 L40 8" stroke="#E8B48F" stroke-width="6" stroke-linecap="round"/>`);
+   s+=tag(80,52,"1960");
+   return s;}},
+ {len:60,cap:"Gegessen wird vor allem, was in der Region wächst. Sonntags gibt es bei vielen Familien Braten mit Kartoffeln.",
   draw(f){let s=`<rect width="640" height="360" fill="#E9D7B8"/>`;
    for(let i=0;i<9;i++)s+=`<rect x="${i*72}" y="0" width="36" height="230" fill="#E2CBA4"/>`;
    s+=piece(320,240,`<rect x="-300" y="0" width="600" height="140" rx="6" fill="#8A5A3B"/>`);
@@ -297,14 +377,47 @@ const SCENES=[
    [[372,268,20],[398,282,26],[350,288,32]].forEach(([x,y,t])=>{if(f>t)s+=piece(x,y,`<circle r="14" fill="#F2C14E"/>`);});
    if(f>38)s+=piece(250,288,`<rect x="-24" y="-7" width="48" height="14" rx="7" fill="#4E9A4A"/>`,8);
    return s;}},
- {len:64,cap:"Heute: Im Supermarkt gibt es Tausende Produkte. Vieles kommt von weit her, vieles ist fertig verpackt.",
-  draw(f){let s=`<rect width="640" height="360" fill="#DDE7EA"/>`;
-   [90,180,270].forEach(y=>s+=piece(320,y,`<rect x="-290" y="0" width="580" height="12" rx="3" fill="#7D8A90"/>`));
-   const cols=["#E2711D","#2F7D45","#B23A48","#F2C14E","#3E6FB0","#8E5BA8"];
-   let n=0;
-   [90,180,270].forEach((y,row)=>{for(let i=0;i<9;i++){n++;if(f>n*1.2){const c=cols[(i+row*2)%cols.length];const h=40+((i*7+row*5)%3)*12;s+=piece(70+i*62,y-h/2,`<rect x="-22" y="${-h/2}" width="44" height="${h}" rx="4" fill="${c}"/><rect x="-14" y="-6" width="28" height="12" rx="2" fill="#FFF6E8"/>`);}}});
-   if(f>14){const px=lerp(-90,730,(f-14)/48);s+=piece(px,40,`<path d="M-50 0 L40 -8 Q58 0 40 8 Z" fill="#FFFFFF"/><path d="M-6 -6 L-26 -30 L-14 -30 L10 -6 Z" fill="#C9D3D8"/><path d="M-6 6 L-26 30 L-14 30 L10 6 Z" fill="#C9D3D8"/><path d="M-40 14 q20 22 40 0" stroke="#F2C14E" stroke-width="9" fill="none" stroke-linecap="round"/>`);}
-   if(f>30)s+=tag(540,330,"heute");
+ {len:68,cap:"Heute: Große Traktoren bearbeiten riesige Felder. Wenige Menschen erzeugen Nahrung für sehr viele.",
+  draw(f){let s=sky("#CFE9F5")+sun(80,56);
+   s+=piece(560,150,`<rect x="-20" y="-70" width="40" height="110" rx="20" fill="#B8C2C8"/><rect x="26" y="-50" width="34" height="90" rx="17" fill="#A9B4BA"/>`);
+   s+=`<rect x="0" y="190" width="640" height="170" fill="#6FA34E"/>`;
+   for(let i=0;i<7;i++)s+=`<rect x="0" y="${196+i*24}" width="640" height="10" fill="#5B8F3E"/>`;
+   const tx=-60+f*7;
+   s+=`<rect x="0" y="190" width="${Math.max(0,tx-120)}" height="170" fill="#9C7A4E" opacity=".85"/>`;
+   s+=piece(tx-190,246,`<rect x="-150" y="-6" width="300" height="10" rx="4" fill="#E2711D"/>${[-140,-100,-60,-20,20,60,100,140].map(x=>`<rect x="${x-2}" y="4" width="4" height="10" fill="#C95F12"/><circle cx="${x}" cy="${20+(f%3)*4}" r="2.5" fill="#5AA9E6"/>`).join("")}<rect x="140" y="-4" width="40" height="6" fill="#C95F12"/>`);
+   s+=piece(tx,250,`<rect x="-70" y="-30" width="150" height="56" rx="8" fill="#2F8F3A"/><rect x="-60" y="-96" width="72" height="70" rx="6" fill="#2F8F3A"/><rect x="-52" y="-88" width="56" height="48" rx="4" fill="#BFE3F2"/><rect x="40" y="-56" width="8" height="30" fill="#2B2420"/><g transform="translate(-36,30)">${wheel(46,"#F2C14E")}</g><g transform="translate(58,42)">${wheel(30,"#F2C14E")}</g>`);
+   s+=tag(560,320,"heute");
+   return s;}},
+ {len:84,cap:"Im Supermarkt gibt es heute Tausende Produkte, fertig verpackt und zu jeder Jahreszeit. Ananas und Bananen kommen von weit her.",
+  draw(f){let s=`<rect width="640" height="360" fill="#E3EBEE"/>`;
+   s+=`<rect x="20" y="20" width="460" height="320" rx="6" fill="#C9D3D8"/><rect x="28" y="232" width="444" height="100" fill="#D7EEF6"/>`;
+   [118,228,330].forEach(y=>s+=`<rect x="20" y="${y}" width="460" height="10" fill="#7D8A90"/>`);
+   let n=0;const show=()=>f>(++n)*2.4;
+   // oben: Flaschen und Milch
+   const bottle=(c,l)=>`<rect x="-6" y="-78" width="12" height="16" fill="${c}"/><rect x="-16" y="-64" width="32" height="64" rx="8" fill="${c}"/><rect x="-14" y="-40" width="28" height="18" fill="#FFF6E8"/>${txt(0,-27,l,9)}`;
+   [[60,"#7FB8E0","Wasser"],[110,"#E8A33A","Saft"],[160,"#7FB8E0","Wasser"],[210,"#B23A48","Saft"]].forEach(([x,c,l])=>{if(show())s+=piece(x,118,bottle(c,l));});
+   [[270],[320],[370]].forEach(([x])=>{if(show())s+=piece(x,118,`<path d="M-18 -62 L0 -76 L18 -62Z" fill="#E8EEF2"/><rect x="-18" y="-62" width="36" height="62" fill="#FFFFFF"/><rect x="-18" y="-40" width="36" height="14" fill="#3E6FB0"/>${txt(0,-12,"Milch",10)}`);});
+   if(show())s+=piece(430,118,`<rect x="-22" y="-56" width="44" height="56" rx="4" fill="#8E5BA8"/>${txt(0,-24,"Saft",11,"#FFFFFF")}`);
+   // Mitte: Packungen
+   const pack=(x,w,h,c,l,col="#2B2420",extra="")=>{if(show())s+=piece(x,228,`<rect x="${-w/2}" y="${-h}" width="${w}" height="${h}" rx="3" fill="${c}"/>${extra}${txt(0,-h/2+4,l,11,col)}`);};
+   pack(60,52,74,"#F4EEDF","MEHL","#2B2420",`<path d="M-26 -74 L-20 -82 L20 -82 L26 -74Z" fill="#E5DCC6"/>`);
+   pack(118,46,56,"#FFFFFF","ZUCKER","#3E6FB0");
+   pack(180,62,50,"#3E6FB0","NUDELN","#FFFFFF",`<rect x="-20" y="-24" width="40" height="14" rx="3" fill="#F2C14E"/>`);
+   pack(244,48,66,"#E9D8A6","REIS");
+   pack(300,50,58,"#B23A48","MÜSLI","#FFFFFF");
+   pack(358,54,48,"#2F7D45","TEE","#FFFFFF");
+   pack(420,60,40,"#F2C14E","KEKSE");
+   // unten: Kühlregal mit Hähnchen
+   if(f>18)s+=txt(250,250,"KÜHLREGAL",11,"#3E6FB0");
+   const chick=`<rect x="-32" y="-14" width="64" height="16" rx="4" fill="#D9DEE1"/><path d="M-14 -24 L-24 -40" stroke="#EDBB96" stroke-width="8" stroke-linecap="round"/><path d="M14 -24 L24 -40" stroke="#EDBB96" stroke-width="8" stroke-linecap="round"/><circle cx="-26" cy="-43" r="4" fill="#FFF6E8"/><circle cx="26" cy="-43" r="4" fill="#FFF6E8"/><ellipse cx="0" cy="-16" rx="24" ry="15" fill="#F2C9A8"/><path d="M-12 -20 Q0 -26 12 -20" stroke="#E0A982" stroke-width="2" fill="none"/><rect x="-32" y="-34" width="64" height="36" rx="5" fill="#FFFFFF" opacity=".25"/>`;
+   [80,160,240,320,400].forEach((x,i)=>{if(f>20+i*3)s+=piece(x,330,chick+txt(0,-50,"Hähnchen",9));});
+   // rechts: Obst aus fernen Ländern
+   if(f>40)s+=piece(560,322,`<rect x="-60" y="-30" width="120" height="40" fill="#A8743F"/><rect x="-60" y="-18" width="120" height="5" fill="#8A5A2B"/>`);
+   if(f>44)s+=piece(530,270,`<path d="M-4 -46 L-14 -74 L0 -56 L6 -80 L10 -56 L24 -72 L14 -46Z" fill="#2F7D45"/><ellipse cx="0" cy="-20" rx="22" ry="30" fill="#E8A33A"/><path d="M-16 -40 L16 0 M16 -40 L-16 0 M-20 -24 L4 6 M20 -24 L-4 6" stroke="#B97A1E" stroke-width="2"/>`);
+   if(f>48)s+=piece(594,282,`<path d="M-26 -30 Q-8 6 30 -14" stroke="#F2C14E" stroke-width="12" fill="none" stroke-linecap="round"/><path d="M-22 -20 Q-2 14 32 -2" stroke="#E5B33A" stroke-width="12" fill="none" stroke-linecap="round"/><rect x="-30" y="-36" width="8" height="10" fill="#6A4C24"/>`);
+   if(f>54)s+=tag(530,180,"aus Costa Rica","#FFF6E8",13);
+   if(f>58)s+=tag(578,220,"aus Ecuador","#FFF6E8",13);
+   if(f>50){const px=lerp(-90,730,(f-50)/34);s+=piece(px,50,`<path d="M-50 0 L40 -8 Q58 0 40 8 Z" fill="#FFFFFF"/><path d="M-6 -6 L-26 -30 L-14 -30 L10 -6 Z" fill="#9AA6AC"/><path d="M-6 6 L-26 30 L-14 30 L10 6 Z" fill="#9AA6AC"/>`);}
    return s;}},
  {len:64,cap:"Im Jahr 2050 leben voraussichtlich fast 10 Milliarden Menschen auf der Erde. Alle wollen satt werden.",
   draw(f){let s=`<rect width="640" height="360" fill="#1F2A44"/>`;
@@ -314,7 +427,18 @@ const SCENES=[
    for(let i=0;i<total;i++){const a=i/24*Math.PI*2-Math.PI/2;s+=piece(320+Math.cos(a)*140,190+Math.sin(a)*140+8,person(cols[i%cols.length]));}
    const val=f<12?8.2:Math.min(9.7,8.2+(f-12)/36*1.5);
    const yr=f<12?2025:Math.min(2050,Math.round(2025+(f-12)/36*25));
-   s+=piece(110,52,`<rect x="-90" y="-30" width="180" height="60" rx="6" fill="#FFF6E8"/><text x="0" y="-6" text-anchor="middle" font-family="Bricolage Grotesque, Trebuchet MS, sans-serif" font-size="15" font-weight="700" fill="#2B2420">${yr}</text><text x="0" y="18" text-anchor="middle" font-family="Bricolage Grotesque, Trebuchet MS, sans-serif" font-size="20" font-weight="800" fill="#2B2420">${val.toFixed(1).replace(".",",")} Mrd.</text>`,-3);
+   s+=piece(110,52,`<rect x="-90" y="-30" width="180" height="60" rx="6" fill="#FFF6E8"/>${txt(0,-6,String(yr),15)}${txt(0,18,val.toFixed(1).replace(".",",")+" Mrd.",20,"#2B2420",800)}`,-3);
+   return s;}},
+ {len:76,cap:"Und 2050? Vielleicht fliegen Drohnen über die Felder, Roboter jäten Unkraut und Gemüse wächst in Hochhäusern.",
+  draw(f){let s=sky("#DDF1F7");
+   s+=piece(520,160,`<rect x="-46" y="-130" width="92" height="160" rx="6" fill="#CFE8EE" stroke="#8FB3BE" stroke-width="3"/>${[0,1,2,3,4].map(i=>`<rect x="-38" y="${-120+i*30}" width="76" height="6" fill="#8FB3BE"/><path d="M-34 ${-104+i*30} q6 -12 12 0 q6 -12 12 0 q6 -12 12 0 q6 -12 12 0 q6 -12 12 0 q6 -12 12 0" fill="#5DB874"/>`).join("")}`);
+   s+=`<rect x="0" y="200" width="640" height="160" fill="#7DB35A"/>`;
+   for(let i=0;i<6;i++)s+=`<path d="M0 ${214+i*25} Q320 ${206+i*25} 640 ${214+i*25}" stroke="#5B8F3E" stroke-width="8" fill="none"/>`;
+   const drone=(x,y,ph)=>{const w=f%2?14:4;return piece(x,y,`<line x1="-26" y1="-6" x2="26" y2="-6" stroke="#2B2420" stroke-width="4"/><rect x="-12" y="-12" width="24" height="14" rx="4" fill="#3E4A52"/><ellipse cx="-26" cy="-12" rx="${w}" ry="3" fill="#2B2420" opacity=".7"/><ellipse cx="26" cy="-12" rx="${w}" ry="3" fill="#2B2420" opacity=".7"/><circle cx="0" cy="-5" r="3" fill="${(f+ph)%4<2?"#E2711D":"#F7D154"}"/>${[0,1,2].map(k=>`<circle cx="${-8+k*8}" cy="${10+((f+k*3)%6)*4}" r="2" fill="#5AA9E6"/>`).join("")}`);};
+   s+=drone(60+((f*6)%520),110+Math.sin(f/4)*10,0);
+   if(f>16)s+=drone(380-((f*4)%300),70+Math.sin(f/3)*8,1);
+   if(f>30){const rx=80+((f-30)*3)%300;s+=piece(rx,300,`<rect x="-24" y="-28" width="48" height="26" rx="6" fill="#E2E7EA"/><rect x="-14" y="-22" width="28" height="10" rx="3" fill="#3E4A52"/><circle cx="-8" cy="-17" r="2.5" fill="${f%2?"#5DB874":"#F7D154"}"/><circle cx="8" cy="-17" r="2.5" fill="${f%2?"#5DB874":"#F7D154"}"/><line x1="0" y1="-28" x2="0" y2="-40" stroke="#3E4A52" stroke-width="3"/><circle cx="0" cy="-42" r="4" fill="#E2711D"/><g transform="translate(-16,2)">${wheel(8,"#9AA6AC")}</g><g transform="translate(16,2)">${wheel(8,"#9AA6AC")}</g>`);}
+   s+=tag(90,52,"2050?");
    return s;}},
  {len:72,cap:"Was liegt dann auf unserem Teller? Insekten? Algen? Fleisch aus dem Labor? Oder ganz andere Dinge?",
   draw(f){let s=`<rect width="640" height="360" fill="url(#kraft)"/>`;
@@ -324,26 +448,27 @@ const SCENES=[
    drop(390,170,16,`<path d="M-34 0 q10 -26 20 0 t20 0 t20 0 t20 0" stroke="#2F7D45" stroke-width="12" fill="none" stroke-linecap="round"/>`,"Alge",500,110);
    drop(300,250,28,`<ellipse rx="44" ry="16" fill="#CFE6EE" stroke="#9FC3CF" stroke-width="3"/><ellipse rx="26" ry="8" fill="#D9707E"/>`,"Laborfleisch",160,300);
    drop(390,245,40,`<circle cx="-14" cy="0" r="6" fill="#C46A2B"/><circle cx="0" cy="-6" r="6" fill="#B8612A"/><circle cx="12" cy="2" r="6" fill="#C46A2B"/><circle cx="-2" cy="8" r="6" fill="#A9561F"/><circle cx="20" cy="-8" r="6" fill="#B8612A"/>`,"Linsen",500,300);
-   if(f>52){const b=Math.abs(Math.sin(f/2))*14;s+=piece(320,70-b,`<text x="0" y="20" text-anchor="middle" font-family="Bricolage Grotesque, Trebuchet MS, sans-serif" font-weight="800" font-size="80" fill="#E2711D" stroke="#2B2420" stroke-width="3">?</text>`);}
+   if(f>52){const b=Math.abs(Math.sin(f/2))*14;s+=piece(320,70-b,`<text x="0" y="20" text-anchor="middle" ${FONT} font-weight="800" font-size="80" fill="#E2711D" stroke="#2B2420" stroke-width="3">?</text>`);}
    return s;}},
- {len:76,cap:"Um das zu beantworten, musst du zuerst wissen: Warum essen wir überhaupt? Und was macht unser Körper mit dem Essen?",
+ {len:72,cap:"Würdest du das essen? Was müsste auf deinem Teller liegen, damit du satt und gesund bleibst?",
   draw(f){let s=`<rect width="640" height="360" fill="#F4E1D2"/>`;
-   s+=piece(320,190,`<circle cx="0" cy="-120" r="42" fill="#E8B48F"/><rect x="-74" y="-78" width="148" height="230" rx="60" fill="#E8B48F"/>`);
-   s+=piece(320,190,`<path d="M0 -104 L0 -40" stroke="#B23A48" stroke-width="10" stroke-linecap="round"/><path d="M0 -40 q40 -6 34 26 q-6 26 -40 18 q-18 -4 -12 -22" fill="#D9707E"/><path d="M-6 6 q-40 0 -40 22 t36 18 t36 18 t-36 18 t-30 14" stroke="#E2711D" stroke-width="12" fill="none" stroke-linecap="round"/><path d="M-50 22 L-50 110 L50 110 L50 22" stroke="#8A5A3B" stroke-width="10" fill="none" stroke-linecap="round" opacity=".6"/>`);
-   const P=[[320,52],[320,86],[320,150],[348,170],[322,200],[284,218],[318,236],[352,254],[318,272],[288,292],[300,310]];
-   const t=Math.max(0,f-8)/4;const i=Math.min(P.length-2,Math.floor(t));const k=Math.min(1,t-i);
-   const ax=P[i][0]+(P[i+1][0]-P[i][0])*k, ay=P[i][1]+(P[i+1][1]-P[i][1])*k;
-   const size=Math.max(4,14-t*1.1);
-   s+=piece(ax,ay,`<circle r="${size.toFixed(1)}" fill="#B23A48"/><rect x="-1.5" y="${-size-6}" width="3" height="7" fill="#4A3418"/>`);
-   if(f>20)s+=tag(140,110,"Warum essen wir?");
-   if(f>40)s+=tag(500,250,"Was passiert im Körper?");
+   s+=piece(160,80,`<rect x="-50" y="-40" width="100" height="80" rx="6" fill="#FFF6E8"/><rect x="-42" y="-32" width="84" height="64" fill="#BFE3F2"/>`);
+   const ph=(Math.sin(f/3)+1)/2; // 0 = Teller, 1 = Mund
+   const hx=380-ph*48, hy=300-ph*118;
+   s+=piece(320,250,`<rect x="-52" y="-30" width="104" height="120" rx="40" fill="#3E8E9E"/>`);
+   s+=piece(320,140,`<path d="M-40 -14 Q-44 -56 0 -58 Q44 -56 40 -14 Q30 -40 0 -40 Q-30 -40 -40 -14Z" fill="#4A3418"/><circle r="42" fill="#E8B48F"/><path d="M-40 -14 Q-44 -56 0 -58 Q44 -56 40 -14 Q30 -36 0 -36 Q-30 -36 -40 -14Z" fill="#4A3418"/><circle cx="-14" cy="-4" r="4" fill="#2B2420"/><circle cx="14" cy="-4" r="4" fill="#2B2420"/><ellipse cx="0" cy="20" rx="${(6+ph*6).toFixed(1)}" ry="${(2+ph*8).toFixed(1)}" fill="#7A2731"/>`);
+   s+=`<rect x="0" y="300" width="640" height="60" fill="#8A5A3B"/>`;
+   s+=piece(400,312,`<ellipse rx="80" ry="22" fill="#FFFFFF"/><ellipse rx="62" ry="15" fill="#F1ECE2"/><path d="M-30 -2 q8 -14 14 0 t14 0" stroke="#2F7D45" stroke-width="7" fill="none" stroke-linecap="round"/><ellipse cx="24" cy="0" rx="18" ry="6" fill="#D9707E"/>`);
+   s+=`<path d="M360 220 Q${(hx+30).toFixed(1)} ${(hy+40).toFixed(1)} ${hx.toFixed(1)} ${hy.toFixed(1)}" stroke="#3E8E9E" stroke-width="18" fill="none" stroke-linecap="round"/>`;
+   s+=piece(hx,hy,`<circle r="11" fill="#E8B48F"/><line x1="0" y1="0" x2="-30" y2="-26" stroke="#9AA6AC" stroke-width="4" stroke-linecap="round"/><path d="M-30 -26 l-4 -12 M-30 -26 l-10 -8 M-30 -26 l2 -13" stroke="#9AA6AC" stroke-width="3" stroke-linecap="round"/>${ph>.15?`<ellipse cx="-38" cy="-38" rx="11" ry="5" fill="#7A5A2E" transform="rotate(-40 -38 -38)"/>`:""}`);
+   if(f>20)s+=piece(510,90,`<ellipse rx="70" ry="38" fill="#FFFFFF"/><circle cx="-70" cy="44" r="8" fill="#FFFFFF"/><circle cx="-88" cy="60" r="5" fill="#FFFFFF"/>${txt(0,8,"Hmm …?",24,"#2B2420",800)}`);
    return s;}},
- {len:60,cap:"Jetzt bist du dran: Sammle deine Fragen und entwickle eure Leitfrage für die Freiarbeit.",
+ {len:64,cap:"Jetzt bist du dran! Was möchtest du herausfinden? Schreibe deine Fragen auf und mach dich auf die Suche nach Antworten.",
   draw(f){let s=`<rect width="640" height="360" fill="url(#kraft)"/>`;
-   if(f>2)s+=piece(320,140,`<rect x="-230" y="-60" width="460" height="120" rx="8" fill="#FFF6E8"/><text x="0" y="-12" text-anchor="middle" font-family="Bricolage Grotesque, Trebuchet MS, sans-serif" font-weight="700" font-size="20" fill="#56685C">DEINE MISSION</text><text x="0" y="28" text-anchor="middle" font-family="Bricolage Grotesque, Trebuchet MS, sans-serif" font-weight="800" font-size="36" fill="#2B2420">Teller 2050</text>`,-2);
-   if(f>12)s+=piece(320,260,`<rect x="-210" y="-26" width="420" height="52" rx="8" fill="#E2711D"/><text x="0" y="8" text-anchor="middle" font-family="Bricolage Grotesque, Trebuchet MS, sans-serif" font-weight="700" font-size="22" fill="#FFFFFF">Wie essen wir in Zukunft?</text>`,2);
-   if(f>22)s+=piece(110,300,`<circle r="30" fill="#F2C14E"/>`);
-   if(f>26)s+=piece(540,70,`<path d="M-30 0 q10 -26 20 0 t20 0 t20 0" stroke="#2F7D45" stroke-width="10" fill="none" stroke-linecap="round"/>`,f*3);
+   if(f>2)s+=piece(320,130,`<rect x="-230" y="-60" width="460" height="120" rx="8" fill="#FFF6E8"/>${txt(0,-12,"DEINE MISSION",20,"#56685C")}${txt(0,28,"Teller 2050",36,"#2B2420",800)}`,-2);
+   if(f>12)s+=piece(320,258,`<rect x="-200" y="-28" width="400" height="56" rx="8" fill="#E2711D"/>${txt(0,9,"Stell deine Fragen!",26,"#FFFFFF",800)}`,2);
+   const qs=[[90,90,20],[560,80,26],[110,300,32],[540,300,38]];
+   qs.forEach(([x,y,t],i)=>{if(f>t)s+=piece(x,y+Math.sin((f+i*3)/2)*6,`<circle r="28" fill="${i%2?"#2F7D45":"#F2C14E"}"/>${txt(0,12,"?",34,i%2?"#FFFFFF":"#2B2420",800)}`,i%2?8:-8);});
    return s;}}
 ];
 
@@ -359,18 +484,20 @@ function tick(){
   film.frame++;
   if(film.frame>=SCENES[film.scene].len){
     if(film.scene<SCENES.length-1){film.scene++;film.frame=0;speak();}
-    else{pauseFilm();markFilm();return;}
+    else{film.frame=SCENES[film.scene].len-1;pauseFilm();markFilm();return;}
   }
   drawFilm();
 }
 function markFilm(){if(!S.film){S.film=true;save();renderNav();}const b=$("#b-film");if(b){b.disabled=false;$("#film-hint").textContent="";}}
 function playFilm(){
   if(film.scene===SCENES.length-1&&film.frame>=SCENES[film.scene].len-1){film.scene=0;film.frame=0;}
+  else if(film.frame>=SCENES[film.scene].len-1)film.frame=0;
   film.playing=true;$("#f-play").textContent="❚❚ Pause";speak();
+  if($("#f-music").checked)Music.start();
   const reduce=window.matchMedia&&matchMedia("(prefers-reduced-motion: reduce)").matches;
   film.timer=setInterval(tick,reduce?1000/3:1000/FPS);
 }
-function pauseFilm(){film.playing=false;clearInterval(film.timer);film.timer=null;const b=$("#f-play");if(b)b.textContent="▶ Abspielen";}
+function pauseFilm(){film.playing=false;clearInterval(film.timer);film.timer=null;Music.stop();const b=$("#f-play");if(b)b.textContent="▶ Abspielen";}
 function stopFilm(){pauseFilm();try{window.speechSynthesis&&speechSynthesis.cancel();}catch(e){}}
 function jump(d){
   film.scene=Math.max(0,Math.min(SCENES.length-1,film.scene+d));
@@ -379,11 +506,12 @@ function jump(d){
   drawFilm();speak();
 }
 V.film.after=()=>{
-  film.frame=film.playing?film.frame:SCENES[film.scene].len-1;
+  if(!film.playing)film.frame=SCENES[film.scene].len-1;
   drawFilm();
   $("#f-play").addEventListener("click",()=>film.playing?pauseFilm():playFilm());
   $("#f-prev").addEventListener("click",()=>jump(-1));
   $("#f-next").addEventListener("click",()=>jump(1));
+  $("#f-music").addEventListener("change",e=>{if(!film.playing)return;e.target.checked?Music.start():Music.stop();});
   $("#b-film").addEventListener("click",()=>go("fragen"));
 };
 
@@ -392,8 +520,8 @@ V.fragen=()=>{
   const opts=q=>`<option value="">Zu welchem Baustein passt das?</option>`+Object.entries(BAUSTEINE).map(([k,v])=>`<option value="${k}" ${q.cat===k?"selected":""}>${esc(v)}</option>`).join("");
   return `<div class="stack"><section class="sheet stack">
   <h2>Meine Fragen</h2>
-  <p>Welche Fragen sind dir beim Film eingefallen? Schreibe mindestens <b>3 Fragen</b> auf. Danach ordnest du jede Frage einem Baustein zu.</p>
-  <div class="note green">Ideen zum Anfangen: Was brauchen wir zum Leben? Warum werden manche Menschen von Essen krank? Kann man Insekten essen? Wie kommt die Banane zu uns?</div>
+  <p>Welche Fragen sind dir beim Film eingefallen? <b>Notiere</b> mindestens 3 eigene Fragen. <b>Ordne</b> danach jede Frage einem Baustein <b>zu</b>.</p>
+  <div class="note green">Ein Beispiel: Warum wurde früher mehr auf dem Feld gearbeitet als heute?</div>
   <form id="q-form" class="row" autocomplete="off"><label class="field" for="q-in" style="flex:1 1 280px">Neue Frage<input type="text" id="q-in" maxlength="160" placeholder="Schreibe deine Frage hier"></label><button class="btn" type="submit" style="align-self:flex-end">Hinzufügen</button></form>
   ${S.questions.length?`<ul class="qlist">${S.questions.map((q,i)=>`<li><p>${esc(q.t)}</p><select data-i="${i}" aria-label="Baustein für Frage ${i+1}">${opts(q)}</select><button class="x" type="button" data-del="${i}" aria-label="Frage löschen">×</button></li>`).join("")}</ul>`:`<p style="color:var(--ink-soft)">Noch keine Fragen. Deine erste Frage erscheint hier.</p>`}
   ${summaryCats()}
@@ -408,86 +536,133 @@ function summaryCats(){
 V.fragen.after=()=>{
   $("#q-form").addEventListener("submit",e=>{e.preventDefault();const v=$("#q-in").value.trim();if(!v)return;S.questions.push({t:v,cat:""});save();render();setTimeout(()=>{const i=$("#q-in");if(i)i.focus();},0);});
   document.querySelectorAll(".qlist select").forEach(sel=>sel.addEventListener("change",()=>{S.questions[+sel.dataset.i].cat=sel.value;save();render();}));
-  document.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{S.questions.splice(+b.dataset.del,1);save();render();}));
+  document.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>{const i=+b.dataset.del;S.questions.splice(i,1);S.group=S.group.filter(g=>g!==i).map(g=>g>i?g-1:g);save();render();}));
   $("#b-fragen").addEventListener("click",()=>go("leitfrage"));
 };
 
 /* ---------- Leitfrage ---------- */
-const PARTS=[
-  {k:"w",l:"1. Fragewort",o:["Wie","Was","Warum","Wird"]},
-  {k:"v",l:"2. Was soll sich tun?",o:["wird sich {s} {z} verändern","werden {s} {z} essen","ernährt sich {s} {z}","wird {s} {z} satt"]},
-  {k:"s",l:"3. Um wen geht es?",o:["die Menschheit","die Ernährung der Menschheit","wir Menschen","ich"]},
-  {k:"z",l:"4. Wann?",o:["in der Zukunft","im Jahr 2050","in 30 Jahren"]}
+const CRIT=[
+  {t:"Offen",d:"Man kann sie nicht mit Ja oder Nein beantworten."},
+  {t:"Groß",d:"Ein Satz oder eine Zahl aus dem Buch reicht als Antwort nicht aus."},
+  {t:"Verbindend",d:"Viele kleine Fragen aus verschiedenen Bereichen helfen, sie zu beantworten."},
+  {t:"Untersuchbar",d:"Man kann mit Recherche, Versuchen und Nachdenken begründete Antworten finden."}
 ];
-function buildLeit(){
-  const p=S.leitParts;if(!p.w||!p.v||!p.s||!p.z)return "";
-  return (p.w+" "+p.v.replace("{s}",p.s).replace("{z}",p.z)+"?").replace(/\s+/g," ");
-}
-V.leitfrage=()=>`<div class="stack"><section class="sheet stack">
-  <h2>Unsere Leitfrage</h2>
-  <p>Eine Leitfrage ist die große Frage, die über allen Stationen steht. Alle deine kleinen Fragen helfen, sie zu beantworten. Baue sie aus den Bausteinen zusammen und verbessere sie dann mit eigenen Worten.</p>
-  ${PARTS.map(pt=>`<div class="stack" style="gap:8px"><h3>${pt.l}</h3><div class="chips">${pt.o.map(o=>`<button type="button" class="chip" data-k="${pt.k}" data-v="${esc(o)}" aria-pressed="${S.leitParts[pt.k]===o}">${esc(o.replace("{s}","…").replace(" {z}",""))}</button>`).join("")}</div></div>`).join("")}
-  <label class="field" for="leit-in">Deine Leitfrage <span class="hint">Verbessere den Satz, bis er für dich gut klingt.</span><textarea id="leit-in" maxlength="200">${esc(S.leit)}</textarea></label>
-  <div class="row"><button class="btn" type="button" id="b-reveal" ${S.leit.trim().length>10?"":"disabled"}>Mit der Klassen-Leitfrage vergleichen</button></div>
-  ${S.leitDone?revealBox():""}
- </section></div>`;
-function revealBox(){return `<div class="stack" id="reveal">
+const PRAC=[
+  {q:"Was ist Stärke?",ok:false,r:"eng",fb:"Das steht mit einem Satz im Buch. Es ist eine gute Teilfrage, aber keine Leitfrage."},
+  {q:"Ist Fast Food ungesund?",ok:false,r:"jn",fb:"Darauf kann man mit Ja oder Nein antworten. Besser wäre: Wie wirkt sich Fast Food auf unseren Körper aus?"},
+  {q:"Wie beeinflusst unsere Ernährung unsere Gesundheit und unsere Umwelt?",ok:true,fb:"Offen, groß und verbindend: Nährstoffe, Verdauung, Krankheiten und Nachhaltigkeit helfen bei der Antwort."},
+  {q:"Welches Essen schmeckt am besten?",ok:false,r:"nicht",fb:"Das ist Geschmackssache. Man kann es nicht mit Fakten untersuchen."},
+  {q:"Wie viele Meter ist der Dünndarm lang?",ok:false,r:"eng",fb:"Die Antwort ist eine Zahl. Gut als Teilfrage für P2."}
+];
+const REASONS={jn:"Ja-Nein-Frage",eng:"zu eng",nicht:"nicht untersuchbar"};
+const STARTS=["Wie wird sich …","Welche Folgen hat …","Wie können wir …","Warum verändert sich …"];
+const JN=/^(ist|sind|kann|können|hat|haben|gibt|soll|sollte|sollten|muss|müssen|darf|dürfen|wird|werden|war|waren|isst|essen|macht|brauchen|braucht)\b/i;
+function pracDone(){return PRAC.every((p,i)=>{const a=S.prac[i];return a&&a.ok===p.ok&&(p.ok||a.r===p.r);});}
+function leitWarn(){const t=S.leit.trim();const w=[];if(!t)return w;if(JN.test(t))w.push("Deine Frage beginnt wie eine Ja-Nein-Frage. Versuche es mit einem Fragewort wie Wie, Warum oder Welche.");if(t.split(/\s+/).length<7)w.push("Deine Frage ist sehr kurz. Ist sie groß genug für alle Bausteine?");if(!/\?\s*$/.test(t))w.push("Vergiss das Fragezeichen nicht.");return w;}
+function leitReady(){return pracDone()&&(S.questions.length<3||S.group.length>=2)&&S.ober.trim().length>2&&S.leit.trim().length>10&&!leitWarn().length&&S.selfcheck.every(Boolean);}
+V.leitfrage=()=>{
+  const pd=pracDone();
+  return `<div class="stack"><section class="sheet stack">
+  <h2>Die Leitfrage entwickeln</h2>
+  <p>Eine Leitfrage ist die große Frage, die über allen Stationen steht. Alle kleinen Fragen helfen, sie zu beantworten. In vier Schritten entwickelst du deine eigene Leitfrage.</p>
+  <span class="stepno">Schritt 1 · Was eine gute Leitfrage ausmacht</span>
+  <div class="crit">${CRIT.map(c=>`<div><b>${c.t}</b><span>${c.d}</span></div>`).join("")}</div>
+ </section>
+ <section class="sheet stack">
+  <span class="stepno">Schritt 2 · Fragen prüfen</span>
+  <p><b>Prüfe</b> mit den vier Merkmalen, ob es sich um eine gute Leitfrage handelt. Wenn nicht: <b>Nenne</b> das Problem.</p>
+  <div class="prac">${PRAC.map((p,i)=>{const a=S.prac[i]||{};const right=a.ok!==undefined&&a.ok===p.ok&&(p.ok||a.r===p.r);const wrong=a.ok!==undefined&&!right&&(a.ok===true||a.r);
+   return `<div class="item"><q>${esc(p.q)}</q>
+    <div class="chips"><button type="button" class="chip" data-pi="${i}" data-ok="1" aria-pressed="${a.ok===true}">gute Leitfrage</button><button type="button" class="chip" data-pi="${i}" data-ok="0" aria-pressed="${a.ok===false}">keine Leitfrage</button></div>
+    ${a.ok===false?`<div class="chips">${Object.entries(REASONS).map(([k,l])=>`<button type="button" class="chip" data-pi="${i}" data-r="${k}" aria-pressed="${a.r===k}">${l}</button>`).join("")}</div>`:""}
+    ${right?`<p class="fb"><span class="ok">Richtig.</span> ${esc(p.fb)}</p>`:wrong?`<p class="fb"><span class="no">Noch nicht.</span> Prüfe die Frage noch einmal mit den vier Merkmalen.</p>`:""}</div>`;}).join("")}</div>
+ </section>
+ <section class="sheet stack" ${pd?"":'aria-disabled="true" style="opacity:.55"'}>
+  <span class="stepno">Schritt 3 · Deine Fragen bündeln</span>
+  ${pd?`<p><b>Vergleiche</b> deine eigenen Fragen und wähle mindestens zwei aus, die zusammengehören. <b>Nenne</b> in einem Begriff oder Satz, was sie gemeinsam haben.</p>
+  <div class="checks">${S.questions.map((q,i)=>`<label for="g-${i}"><input type="checkbox" id="g-${i}" data-g="${i}" ${S.group.includes(i)?"checked":""}> ${esc(q.t)}</label>`).join("")||"<p>Du hast noch keine eigenen Fragen.</p>"}</div>
+  <label class="field" for="ober">Das Gemeinsame in einem Begriff oder Satz <span class="hint">z. B. „Wie sich Essen und Landwirtschaft verändern“</span><input type="text" id="ober" maxlength="120" value="${esc(S.ober)}"></label>`:`<p>Wird frei, wenn du in Schritt 2 alle Fragen richtig geprüft hast.</p>`}
+ </section>
+ <section class="sheet stack" ${pd?"":'aria-disabled="true" style="opacity:.55"'}>
+  <span class="stepno">Schritt 4 · Deine Leitfrage formulieren</span>
+  ${pd?`<p><b>Entwickle</b> aus dem Gemeinsamen eine Leitfrage, die zur Zukunft der Ernährung passt, und <b>prüfe</b> sie anschließend mit den vier Merkmalen. Diese Satzanfänge können helfen:</p>
+  <div class="chips">${STARTS.map(t=>`<button type="button" class="chip" data-start="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+  <label class="field" for="leit-in">Meine Leitfrage<textarea id="leit-in" maxlength="200">${esc(S.leit)}</textarea></label>
+  <div id="leit-warn">${leitWarn().map(w=>`<p class="warn">${esc(w)}</p>`).join("")}</div>
+  <p><b>Prüfe deine Frage selbst:</b></p>
+  <div class="checks">${CRIT.map((c,i)=>`<label for="sc-${i}"><input type="checkbox" id="sc-${i}" data-sc="${i}" ${S.selfcheck[i]?"checked":""}> Meine Frage ist ${c.t.toLowerCase()}: ${c.d.replace(/^Man/,"man").replace(/^Ein/,"ein").replace(/^Viele/,"viele")}</label>`).join("")}</div>
+  <div class="row"><button class="btn" type="button" id="b-reveal" ${leitReady()?"":"disabled"}>Mit der Leitfrage der Freiarbeit vergleichen</button></div>`:`<p>Wird frei, wenn du in Schritt 2 alle Fragen richtig geprüft hast.</p>`}
+ </section>
+ ${S.leitDone?revealBox():""}
+ </div>`;
+};
+function revealBox(){return `<section class="sheet stack" id="reveal">
   <div class="note green stack" style="gap:6px"><span class="eyebrow">Die Leitfrage der Freiarbeit</span><p class="reveal">Wie wird sich die Ernährung der Menschheit in der Zukunft verändern?</p></div>
-  <p>Vergleiche: Was ist bei deiner Frage gleich, was anders? Für die Freiarbeit gilt die Leitfrage oben. Deine eigene Frage bleibt auf deinem Laufzettel stehen.</p>
-  <label class="field" for="prog1">Deine erste Vermutung <span class="hint">Was glaubst du heute: Wie wirst du dich im Jahr 2050 ernähren? Würdest du Insekten oder Algen essen? Stelle diese Antwort auch in die Padlet-Spalte „Meine Prognose vorher“.</span><textarea id="prog1" maxlength="600">${esc(S.prog1)}</textarea></label>
-  <div class="row"><button class="btn" type="button" id="b-leit" ${S.prog1.trim().length>15?"":"disabled"}>Weiter zum Vortest</button></div></div>`;}
+  <label class="field" for="compare">Vergleich <span class="hint"><b>Vergleiche</b> deine Leitfrage mit der Leitfrage der Freiarbeit: Was ist gleich, was anders? <b>Nenne</b> eigene Fragen, die bei der Leitfrage der Freiarbeit helfen.</span><textarea id="compare" maxlength="600">${esc(S.compare)}</textarea></label>
+  <label class="field" for="prog1">Deine Hypothese <span class="hint"><b>Stelle eine Hypothese auf</b>: Wie wirst du dich im Jahr 2050 ernähren? Würdest du Insekten oder Algen essen? <b>Begründe</b> deine Hypothese.</span><textarea id="prog1" maxlength="600">${esc(S.prog1)}</textarea></label>
+  <div class="row"><button class="btn" type="button" id="b-leit" ${S.prog1.trim().length>15&&S.compare.trim().length>15?"":"disabled"}>Weiter zum Vortest</button></div></section>`;}
 V.leitfrage.after=()=>{
-  document.querySelectorAll(".chip").forEach(c=>c.addEventListener("click",()=>{S.leitParts[c.dataset.k]=c.dataset.v;const b=buildLeit();if(b)S.leit=b;save();render();}));
-  $("#leit-in").addEventListener("input",e=>{S.leit=e.target.value;save();$("#b-reveal").disabled=S.leit.trim().length<=10;});
-  $("#b-reveal").addEventListener("click",()=>{S.leitDone=true;save();render();const r=$("#reveal");if(r)r.scrollIntoView({behavior:"smooth",block:"start"});});
-  const p=$("#prog1");if(p){p.addEventListener("input",()=>{S.prog1=p.value;save();$("#b-leit").disabled=S.prog1.trim().length<=15;});$("#b-leit").addEventListener("click",()=>go("vortest"));}
+  document.querySelectorAll("[data-pi]").forEach(c=>c.addEventListener("click",()=>{const i=+c.dataset.pi;const a=S.prac[i]||{};
+    if(c.dataset.ok!==undefined){a.ok=c.dataset.ok==="1";if(a.ok)delete a.r;}else a.r=c.dataset.r;S.prac[i]=a;save();render();
+    const el=document.querySelectorAll(".prac .item")[i];if(el)el.scrollIntoView({block:"nearest"});}));
+  document.querySelectorAll("[data-g]").forEach(cb=>cb.addEventListener("change",()=>{const i=+cb.dataset.g;S.group=cb.checked?S.group.concat(i):S.group.filter(g=>g!==i);save();upd();}));
+  const ober=$("#ober");if(ober)ober.addEventListener("input",()=>{S.ober=ober.value;save();upd();});
+  const li=$("#leit-in");
+  const upd=()=>{const b=$("#b-reveal");if(b)b.disabled=!leitReady();const w=$("#leit-warn");if(w)w.innerHTML=leitWarn().map(x=>`<p class="warn">${esc(x)}</p>`).join("");};
+  if(li)li.addEventListener("input",()=>{S.leit=li.value;save();upd();});
+  document.querySelectorAll("[data-start]").forEach(c=>c.addEventListener("click",()=>{S.leit=c.dataset.start.replace(" …"," ");save();li.value=S.leit;li.focus();upd();}));
+  document.querySelectorAll("[data-sc]").forEach(cb=>cb.addEventListener("change",()=>{S.selfcheck[+cb.dataset.sc]=cb.checked;save();upd();}));
+  const rv=$("#b-reveal");if(rv)rv.addEventListener("click",()=>{S.leitDone=true;save();render();const r=$("#reveal");if(r)r.scrollIntoView({behavior:"smooth",block:"start"});});
+  const p=$("#prog1"),cmp=$("#compare");
+  if(p){const u2=()=>{$("#b-leit").disabled=!(S.prog1.trim().length>15&&S.compare.trim().length>15);};
+    p.addEventListener("input",()=>{S.prog1=p.value;save();u2();renderNav();});
+    cmp.addEventListener("input",()=>{S.compare=cmp.value;save();u2();});
+    $("#b-leit").addEventListener("click",()=>go("vortest"));}
 };
 
-/* ---------- Quiz ---------- */
+/* ---------- Vortest ---------- */
 let draft={};
-function quizView(mode){
-  const res=S[mode];
-  const title=mode==="pre"?"Vortest":"Nachtest";
-  const intro=mode==="pre"?"Hier testest du, was du schon weißt. Der Vortest zählt nicht für die Note. Rate ruhig, wenn du etwas nicht weißt. Am Ende der Freiarbeit machst du denselben Test noch einmal.":"Das ist derselbe Test wie am Anfang. Jetzt zeigt sich, was du in der Freiarbeit gelernt hast.";
+V.vortest=()=>{
+  const res=S.pre;
   return `<div class="stack"><section class="sheet stack">
-   <h2>${title}</h2><p>${intro}</p>
-   ${res?resultBox(mode):""}
+   <h2>Vortest</h2><p>Hier testest du, was du schon weißt. Der Vortest zählt nicht für die Note. Rate ruhig, wenn du etwas nicht weißt. Am Ende der Freiarbeit schreibst du eine Lernzielkontrolle zu diesen Themen.</p>
+   ${res?`<div class="note"><b>${res.score} von ${QUIZ.length} Fragen richtig</b> · abgegeben am ${esc(res.at)}</div>`:""}
    <form class="quiz" id="quiz">
-   ${QUIZ.map((q,i)=>{const sel=res?res.answers[i]:draft[i];return `<fieldset><legend>${i+1}. ${esc(q.q)}</legend><div class="opts">${q.o.map((o,j)=>`<label for="q${i}o${j}"><input type="radio" id="q${i}o${j}" name="q${i}" value="${j}" ${sel===j?"checked":""} ${res?"disabled":""}> <span>${esc(o)}</span></label>`).join("")}</div>${res&&mode==="post"?`<p class="fb">${res.answers[i]===q.a?'<span class="ok">Richtig.</span>':'<span class="no">Nicht richtig.</span>'} ${esc(q.why)}</p>`:res?`<p class="fb">${res.answers[i]===q.a?'<span class="ok">Richtig.</span>':'<span class="no">Noch nicht richtig.</span> Das lernst du in der Freiarbeit.'}</p>`:""}</fieldset>`;}).join("")}
-   <fieldset><legend>${QUIZ.length+1}. Wie wirst du dich im Jahr 2050 ernähren? Begründe mit zwei Argumenten.</legend><textarea id="q-open" maxlength="800" ${res?"disabled":""} aria-label="Offene Antwort">${esc(res?res.open:(draft.open||""))}</textarea></fieldset>
+   ${QUIZ.map((q,i)=>{const sel=res?res.answers[i]:draft[i];return `<fieldset><legend>${i+1}. ${esc(q.q)}</legend><div class="opts">${q.o.map((o,j)=>`<label for="q${i}o${j}"><input type="radio" id="q${i}o${j}" name="q${i}" value="${j}" ${sel===j?"checked":""} ${res?"disabled":""}> <span>${esc(o)}</span></label>`).join("")}</div>${res?`<p class="fb">${res.answers[i]===q.a?'<span class="ok">Richtig.</span>':'<span class="no">Noch nicht richtig.</span> Das lernst du in der Freiarbeit.'}</p>`:""}</fieldset>`;}).join("")}
+   <fieldset><legend>${QUIZ.length+1}. Stelle eine Hypothese auf, wie du dich im Jahr 2050 ernähren wirst, und begründe sie mit zwei Argumenten.</legend><textarea id="q-open" maxlength="800" ${res?"disabled":""} aria-label="Offene Antwort">${esc(res?res.open:(draft.open||""))}</textarea></fieldset>
    ${res?"":`<div class="row"><button class="btn" type="submit" id="q-submit">Test abgeben</button><span id="q-miss" style="color:var(--ink-soft);font-size:15px"></span></div>`}
    </form>
-   ${res?`<div class="row"><button class="btn" type="button" data-go="${mode==="pre"?"laufzettel":"bericht"}">${mode==="pre"?"Weiter zum Laufzettel":"Zum Bericht"}</button></div>`:""}
+   ${res?`<div class="row"><button class="btn" type="button" data-go="laufzettel">Weiter zum Laufzettel</button></div>`:""}
   </section></div>`;
-}
-function resultBox(mode){const r=S[mode];return `<div class="note ${r.score>=6?"green":""}"><b>${r.score} von ${QUIZ.length} Fragen richtig</b> · abgegeben am ${esc(r.at)}${mode==="post"&&S.pre?` · im Vortest waren es ${S.pre.score}`:""}</div>`;}
-function quizAfter(mode){
-  const f=$("#quiz");if(!f||S[mode])return;
+};
+V.vortest.after=()=>{
+  const f=$("#quiz");if(!f||S.pre)return;
   f.addEventListener("change",e=>{if(e.target.name)draft[+e.target.name.slice(1)]=+e.target.value;});
   $("#q-open").addEventListener("input",e=>draft.open=e.target.value);
   f.addEventListener("submit",e=>{e.preventDefault();
     const missing=QUIZ.map((_,i)=>draft[i]===undefined?i+1:0).filter(Boolean);
     if(missing.length){$("#q-miss").textContent="Es fehlt noch eine Antwort bei Frage "+missing.join(", ")+".";return;}
     const answers=QUIZ.map((_,i)=>draft[i]);
-    S[mode]={answers,score:answers.filter((a,i)=>a===QUIZ[i].a).length,open:(draft.open||"").trim(),at:today()};
+    S.pre={answers,score:answers.filter((a,i)=>a===QUIZ[i].a).length,open:(draft.open||"").trim(),at:today()};
     draft={};save();render();window.scrollTo({top:0});
   });
-}
-V.vortest=()=>quizView("pre");V.vortest.after=()=>quizAfter("pre");
+};
 
 /* ---------- Laufzettel ---------- */
 function pk(id){if(!S.pk[id])S.pk[id]={c:[false,false,false],diary:"",done:""};return S.pk[id];}
 function isDone(id){if(id==="0")return paket0Done();const p=S.pk[id];return !!(p&&p.done);}
 function unlocked(p){return p.need.every(isDone)&&(p.bs!=="W"||!!S.wahl);}
 V.laufzettel=()=>{
-  const all=PACKS.length+2;const n=(paket0Done()?1:0)+PACKS.filter(p=>isDone(p.id)).length+(S.post?1:0);
+  const all=PACKS.length+1;const n=(paket0Done()?1:0)+PACKS.filter(p=>isDone(p.id)).length;
   const w=WAHL.find(x=>x.id===S.wahl);
   return `<div class="stack">
   <section class="sheet stack">
    <h2>Mein Laufzettel</h2>
-   <p>Arbeite die Pakete von oben nach unten ab. Ein Paket ist erledigt, wenn du alle drei Haken gesetzt hast. Schreibe nach jedem Paket kurz in dein Lerntagebuch, damit du nach einer Pause in einem anderen Fach gut wieder einsteigst.</p>
+   <p>Arbeite die Pakete von oben nach unten ab. Ein Paket ist erledigt, wenn du alle drei Haken gesetzt hast. Schreibe nach jedem Paket in dein Lerntagebuch, damit du nach einer Stunde Kunst oder Englisch gut wieder einsteigst.</p>
    <div class="stack" style="gap:6px"><div class="row" style="justify-content:space-between"><b>${n} von ${all} Paketen erledigt</b><span style="color:var(--ink-soft);font-size:15px">Ziel: alles in 4 Wochen</span></div><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${all}" aria-valuenow="${n}"><i style="width:${Math.round(n/all*100)}%"></i></div></div>
    ${S.leit?`<div class="note green"><span class="eyebrow">Meine Leitfrage</span><br>${esc(S.leit)}</div>`:""}
+   <details class="ops"><summary><b>Was bedeuten die fett gedruckten Wörter?</b> Die Operatoren sagen dir genau, was du tun sollst.</summary>
+    <dl>${OPERATOREN.map(([o,d])=>`<div><dt>${o}</dt><dd>${d}</dd></div>`).join("")}</dl></details>
   </section>
   <div class="packs">
    <details class="pack ${paket0Done()?"done":""}"><summary><span class="code">0</span><span><h3>Start</h3><span class="meta">Film, Fragen, Leitfrage, Vortest in diesem Programm</span></span>${pill(paket0Done()?"done":"open")}</summary>
@@ -495,13 +670,13 @@ V.laufzettel=()=>{
    ${PACKS.filter(p=>p.bs!=="W").map(packView).join("")}
    <section class="sheet stack">
     <h3>Wähle deinen Wahlbaustein</h3>
-    <p>${S.questions.length?"Schau, zu welchem Baustein deine eigenen Fragen am besten passen.":""} Du kannst wählen, sobald du möchtest. Bearbeiten kannst du ihn nach P1 und P2.</p>
+    <p>${S.questions.length?"Schau, zu welchem Baustein deine eigenen Fragen am besten passen. ":""}Du kannst wählen, sobald du möchtest. Bearbeiten kannst du ihn nach P1 und P2.</p>
     <div class="wahl">${WAHL.map(x=>`<button type="button" data-wahl="${x.id}" aria-pressed="${S.wahl===x.id}"><b>${x.id} ${esc(x.t)}</b><span>${esc(x.q)}</span></button>`).join("")}</div>
     ${w?`<p class="note">Deine Zukunftsfrage für ${esc(w.id)}: <b>${esc(w.z)}</b></p>`:""}
    </section>
    ${PACKS.filter(p=>p.bs==="W").map(packView).join("")}
-   <details class="pack ${S.post?"done":(PACKS.every(p=>isDone(p.id))?"":"locked")}" ${PACKS.every(p=>isDone(p.id))&&!S.post?"open":""}><summary><span class="code">Z</span><span><h3>Ziel</h3><span class="meta">Zweite Prognose und Nachtest</span></span>${pill(S.post?"done":(PACKS.every(p=>isDone(p.id))?"open":"locked"))}</summary>
-    <div class="body">${PACKS.every(p=>isDone(p.id))?zielView():`<p>Wird frei, wenn alle Pakete erledigt sind.</p>`}</div></details>
+   <section class="sheet stack"><h3>Am Ende: Lernzielkontrolle</h3>
+    <p>Am Ende der vier Wochen schreibst du eine Lernzielkontrolle. ${allPacksDone()?"Du hast alle Pakete erledigt. Schau zur Vorbereitung noch einmal in dein Lerntagebuch und deine Mappe.":"Erledige bis dahin alle Pakete."}</p></section>
   </div>
   <section class="sheet stack"><h3>Schneller fertig?</h3><p>Bearbeite einen zweiten Wahlbaustein als Expertenauftrag.</p>
    <label class="field" for="wahl2">Zweiter Wahlbaustein<select id="wahl2"><option value="">keiner</option>${WAHL.filter(x=>x.id!==S.wahl).map(x=>`<option value="${x.id}" ${S.wahl2===x.id?"selected":""}>${x.id} ${esc(x.t)}</option>`).join("")}</select></label></section>
@@ -514,50 +689,43 @@ function packView(p){
   const wb=p.bs==="W"&&S.wahl?" · "+S.wahl:"";
   return `<details class="pack ${st}" ${st==="open"?"open":""} data-pack="${p.id}"><summary><span class="code">${p.id}</span><span><h3>${esc(p.t)}</h3><span class="meta">${esc(p.box)}${wb}${d.done?" · erledigt am "+esc(d.done):""}</span></span>${pill(st)}</summary>
    <div class="body">${st==="locked"?`<p>${needTxt}</p>`:`
-    <div><b>Das machst du:</b><ul class="clean">${p.todo.map(t=>`<li>${esc(t)}</li>`).join("")}</ul></div>
+    <div><b>Das machst du:</b><ul class="clean">${p.todo.map(t=>`<li>${md(t)}</li>`).join("")}</ul></div>
+    <p class="note green"><b>Hilfe:</b> Die Hilfen zu diesem Modul liegen in der ${esc(p.box)}.</p>
     <div class="checks">${CHECKS.map((c,i)=>`<label for="c-${p.id}-${i}"><input type="checkbox" id="c-${p.id}-${i}" data-pc="${p.id}" data-ci="${i}" ${d.c[i]?"checked":""}> ${esc(c)}</label>`).join("")}</div>
-    <label class="field" for="d-${p.id}">Lerntagebuch <span class="hint">Was habe ich gelernt? Was war schwierig? Wo mache ich weiter?</span><textarea id="d-${p.id}" data-diary="${p.id}" maxlength="600">${esc(d.diary)}</textarea></label>`}
+    <label class="field" for="d-${p.id}">Lerntagebuch <span class="hint"><b>Fasse</b> zusammen, was du gelernt hast. <b>Nenne</b> offene Fragen und wo du weitermachst.</span><textarea id="d-${p.id}" data-diary="${p.id}" maxlength="600">${esc(d.diary)}</textarea></label>`}
    </div></details>`;
 }
-function zielView(){return `<label class="field" for="prog2">Deine zweite Prognose <span class="hint">Wie wird sich die Ernährung der Menschheit in der Zukunft verändern? Nutze mindestens zwei Argumente aus deinen Bausteinen. Stelle die Antwort auch in die Padlet-Spalte „Meine Prognose nachher“.</span><textarea id="prog2" maxlength="800">${esc(S.prog2)}</textarea></label>
- ${S.prog1?`<p class="note"><b>Zum Vergleich, deine erste Vermutung:</b> ${esc(S.prog1)}</p>`:""}
- <div class="row"><button class="btn" type="button" id="b-post" ${S.prog2.trim().length>15?"":"disabled"}>${S.post?"Nachtest ansehen":"Zum Nachtest"}</button></div>`;}
 V.laufzettel.after=()=>{
   document.querySelectorAll("[data-pc]").forEach(cb=>cb.addEventListener("change",()=>{const d=pk(cb.dataset.pc);d.c[+cb.dataset.ci]=cb.checked;d.done=d.c.every(Boolean)?(d.done||today()):"";save();render();const el=document.querySelector(`[data-pack="${cb.dataset.pc}"]`);if(el&&!d.done)el.open=true;}));
   document.querySelectorAll("[data-diary]").forEach(t=>t.addEventListener("input",()=>{pk(t.dataset.diary).diary=t.value;save();}));
   document.querySelectorAll("[data-wahl]").forEach(b=>b.addEventListener("click",()=>{S.wahl=b.dataset.wahl;if(S.wahl2===S.wahl)S.wahl2="";save();render();}));
   $("#wahl2").addEventListener("change",e=>{S.wahl2=e.target.value;save();});
-  const p2=$("#prog2");if(p2){p2.addEventListener("input",()=>{S.prog2=p2.value;save();$("#b-post").disabled=S.prog2.trim().length<=15;});$("#b-post").addEventListener("click",()=>{cur="nachtest";stopFilm();render();window.scrollTo({top:0});});}
 };
-V.nachtest=()=>quizView("post");V.nachtest.after=()=>quizAfter("post");
 
 /* ---------- Bericht ---------- */
-function amp(a,b){const c=b==null?"var(--rule)":b>=a&&b>0?"var(--leaf)":"var(--carrot)";return `<span class="amp" style="background:${c}"></span>`;}
-function partScore(r,bs){if(!r)return null;let n=0,t=0;QUIZ.forEach((q,i)=>{if(q.bs===bs){t++;if(r.answers[i]===q.a)n++;}});return n+"/"+t;}
 function encode(){try{return btoa(unescape(encodeURIComponent(JSON.stringify(S))));}catch(e){return "";}}
+const inArtifact=()=>!!(window.claude&&typeof window.claude.use==="function");
 V.bericht=()=>{
   const w=WAHL.find(x=>x.id===S.wahl);
+  const canShare=!inArtifact()&&!!navigator.canShare;
   return `<div class="stack">
   <section class="sheet stack">
    <h2>Mein Bericht</h2>
-   <p>Diese Übersicht zeigt deinen Stand. Mache am Ende ein Foto oder einen Screenshot davon und stelle ihn aufs Padlet, damit deine Biologielehrkraft ihn sieht.</p>
+   <p>Diese Übersicht zeigt deinen Stand. Erstelle daraus eine PDF und schicke sie an deine Biologielehrkraft.</p>
+   <div class="row"><button class="btn" type="button" id="b-pdf">Bericht als PDF speichern</button>${canShare?`<button class="btn ghost" type="button" id="b-share">PDF verschicken</button>`:""}<span id="pdf-msg" style="font-size:15px;color:var(--ink-soft)"></span></div>
    <div class="tablewrap"><table class="rep">
     <tr><th>Name</th><td>${esc(S.name||"–")}${S.members?" ("+esc(S.members)+")":""}</td></tr>
     <tr><th>Meine Leitfrage</th><td>${esc(S.leit||"–")}</td></tr>
     <tr><th>Wahlbaustein</th><td>${w?esc(w.id+" "+w.t):"noch nicht gewählt"}${S.wahl2?" · Expertenauftrag "+esc(S.wahl2):""}</td></tr>
     <tr><th>Pakete</th><td>${["0"].concat(PACKS.map(p=>p.id)).map(id=>`${id}: ${isDone(id)?"✓"+(S.pk[id]&&S.pk[id].done?" "+esc(S.pk[id].done):""):"○"}`).join(" · ")}</td></tr>
     <tr><th>Vortest</th><td>${S.pre?S.pre.score+" von "+QUIZ.length+" ("+esc(S.pre.at)+")":"–"}</td></tr>
-    <tr><th>Nachtest</th><td>${S.post?S.post.score+" von "+QUIZ.length+" ("+esc(S.post.at)+")":"–"}</td></tr>
+    <tr><th>Meine Vermutung</th><td>${esc(S.prog1||"–")}</td></tr>
    </table></div>
-   <h3>Vorher und nachher</h3>
-   <div class="tablewrap"><table class="rep"><tr><th>Bereich</th><th>Vortest</th><th>Nachtest</th></tr>
-    ${[["P1","Nährstoffe"],["P2","Verdauung"],["W","Nachhaltigkeit"]].map(([k,l])=>{const a=partScore(S.pre,k),b=partScore(S.post,k);const an=a?+a.split("/")[0]:0,bn=b?+b.split("/")[0]:null;return `<tr><td>${l}</td><td>${a||"–"}</td><td>${amp(an,bn)}${b||"–"}</td></tr>`;}).join("")}
-   </table></div>
-   ${S.prog1||S.prog2?`<h3>Meine Prognosen</h3><p><b>Vorher:</b> ${esc(S.prog1||"–")}</p><p><b>Nachher:</b> ${esc(S.prog2||"–")}</p>`:""}
+   ${openQuestions().length?`<h3>Offene Fragen aus dem Lerntagebuch</h3><ul class="clean">${openQuestions().map(o=>`<li><b>${esc(o.id)}:</b> ${esc(o.t)}</li>`).join("")}</ul>`:""}
   </section>
   <section class="sheet stack">
    <h3>Fortschrittscode</h3>
-   <p>Dein Fortschritt ist nur auf diesem Gerät gespeichert. Wenn du an einem anderen Tablet weiterarbeitest, kopiere den Code und schicke ihn dir selbst, zum Beispiel über IServ oder als private Notiz. Auf dem neuen Gerät fügst du ihn unten ein.</p>
+   <p>Dein Fortschritt ist nur auf diesem Gerät gespeichert. Wenn du an einem anderen Tablet weiterarbeitest, kopiere den Code und schicke ihn dir selbst. Auf dem neuen Gerät fügst du ihn unten ein.</p>
    <textarea class="codebox" id="code-out" readonly aria-label="Dein Fortschrittscode">${esc(encode())}</textarea>
    <div class="row"><button class="btn small" type="button" id="b-copy">Code kopieren</button><span id="copy-msg" style="color:var(--ink-soft);font-size:15px"></span></div>
    <label class="field" for="code-in">Code von einem anderen Gerät einfügen<textarea class="codebox" id="code-in"></textarea></label>
@@ -570,9 +738,68 @@ V.bericht=()=>{
   </section>
  </div>`;
 };
+function openQuestions(){return PACKS.filter(p=>S.pk[p.id]&&S.pk[p.id].diary.trim()).map(p=>({id:p.id+" "+p.t,t:S.pk[p.id].diary.trim()}));}
+
+/* PDF mit jsPDF: Standardschrift Helvetica kann deutsche Umlaute */
+function buildPdf(){
+  const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:"mm",format:"a4"});
+  const L=18,W=174;let y=20;
+  const need=h=>{if(y+h>282){doc.addPage();y=20;}};
+  const head=(t,size=13)=>{need(12);doc.setFont("helvetica","bold");doc.setFontSize(size);doc.text(t,L,y);y+=size*.5+2;};
+  const para=(t,size=11)=>{doc.setFont("helvetica","normal");doc.setFontSize(size);doc.splitTextToSize(String(t||"–"),W).forEach(line=>{need(6);doc.text(line,L,y);y+=size*.45+1;});y+=2;};
+  const pair=(k,v)=>{doc.setFontSize(11);doc.setFont("helvetica","bold");need(6);doc.text(k,L,y);doc.setFont("helvetica","normal");const lines=doc.splitTextToSize(String(v||"–"),W-46);lines.forEach((ln,i)=>{if(i)need(6);doc.text(ln,L+46,y);y+=6;});};
+  doc.setFont("helvetica","bold");doc.setFontSize(20);doc.text("Mission Teller 2050",L,y);y+=8;
+  doc.setFont("helvetica","normal");doc.setFontSize(11);doc.text("Bericht zur Freiarbeit Biologie · Ernährung · erstellt am "+new Date().toLocaleDateString("de-DE"),L,y);y+=10;
+  const w=WAHL.find(x=>x.id===S.wahl);
+  pair("Name",S.name+(S.members?" ("+S.members+")":""));
+  pair("Wahlbaustein",w?w.id+" "+w.t+(S.wahl2?" · Expertenauftrag "+S.wahl2:""):"noch nicht gewählt");
+  pair("Vortest",S.pre?S.pre.score+" von "+QUIZ.length+" richtig ("+S.pre.at+")":"noch nicht gemacht");
+  y+=4;head("Pakete");
+  [{id:"0",t:"Start: Film, Fragen, Leitfrage, Vortest"}].concat(PACKS).forEach(p=>{const d=S.pk[p.id];pair(p.id,p.t+": "+(isDone(p.id)?"erledigt"+(d&&d.done?" am "+d.done:""):"offen"));});
+  y+=4;head("Meine Fragen");
+  if(S.questions.length)S.questions.forEach(q=>para("• "+q.t+(q.cat?"  ("+BAUSTEINE[q.cat]+")":"")));else para("–");
+  head("Meine Leitfrage");para(S.leit);
+  head("Gemeinsamkeit meiner Fragen");para(S.ober);
+  head("Vergleich mit der Leitfrage der Freiarbeit");para(S.compare);
+  head("Meine Hypothese zu 2050");para(S.prog1);
+  head("Lerntagebuch");
+  const ds=PACKS.filter(p=>S.pk[p.id]&&S.pk[p.id].diary.trim());
+  if(ds.length)ds.forEach(p=>{doc.setFont("helvetica","bold");doc.setFontSize(11);need(6);doc.text(p.id+" "+p.t,L,y);y+=5.5;para(S.pk[p.id].diary.trim());});else para("Noch keine Einträge.");
+  return doc;
+}
+function pdfName(){return "Bericht_Teller2050_"+(S.name||"ohne_Name").replace(/[^A-Za-z0-9ÄÖÜäöüß_-]+/g,"_")+".pdf";}
+async function savePdf(){
+  const m=$("#pdf-msg");
+  try{
+    if(!window.jspdf){m.textContent="Die PDF-Funktion lädt noch oder ist ohne Internet nicht verfügbar. Lade die Seite neu und versuche es noch einmal.";return;}
+    m.textContent="PDF wird erstellt …";
+    const blob=buildPdf().output("blob");
+    const api=window.claude&&typeof window.claude.use==="function"?window.claude:null;
+    if(api){
+      const dl=await api.use("downloads");
+      if(dl){
+        try{await dl.save({filename:pdfName(),data:blob});m.textContent="Gespeichert.";}
+        catch(e){m.textContent=e&&e.code==="declined"?"Nicht gespeichert.":"Speichern hat nicht geklappt ("+((e&&(e.code||e.message))||"unbekannt")+").";}
+        return;
+      }
+    }
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=pdfName();a.rel="noopener";document.body.appendChild(a);a.click();a.remove();
+    m.innerHTML='Die PDF wurde erstellt. Falls kein Download startet: <a href="'+url+'" target="_blank" rel="noopener">PDF öffnen</a> und von dort speichern oder teilen.';
+  }catch(e){m.textContent="Die PDF konnte nicht erstellt werden ("+((e&&e.message)||e)+").";}
+}
+async function sharePdf(){
+  const m=$("#pdf-msg");
+  if(!window.jspdf){m.textContent="Die PDF-Funktion lädt noch oder ist ohne Internet nicht verfügbar.";return;}
+  let file;try{file=new File([buildPdf().output("blob")],pdfName(),{type:"application/pdf"});}catch(e){m.textContent="Die PDF konnte nicht erstellt werden ("+((e&&e.message)||e)+").";return;}
+  if(!navigator.canShare||!navigator.canShare({files:[file]})){m.textContent="Verschicken geht auf diesem Gerät nicht. Speichere die PDF und hänge sie an eine Nachricht an.";return;}
+  try{await navigator.share({files:[file],title:"Bericht Mission Teller 2050"});}catch(e){if(e&&e.name!=="AbortError")m.textContent="Verschicken hat nicht geklappt. Speichere die PDF stattdessen.";}
+}
 V.bericht.after=()=>{
-  $("#b-copy").addEventListener("click",()=>{const t=$("#code-out");const done=()=>$("#copy-msg").textContent="Kopiert.";
-    try{navigator.clipboard.writeText(t.value).then(done,()=>{t.select();$("#copy-msg").textContent="Code ist markiert. Kopiere ihn mit Strg+C oder lange tippen.";});}catch(e){t.select();$("#copy-msg").textContent="Code ist markiert. Kopiere ihn mit Strg+C oder lange tippen.";}});
+  $("#b-pdf").addEventListener("click",savePdf);
+  const sh=$("#b-share");if(sh)sh.addEventListener("click",sharePdf);
+  $("#b-copy").addEventListener("click",()=>{const t=$("#code-out");const done=()=>$("#copy-msg").textContent="Kopiert.";const fall=()=>{t.select();$("#copy-msg").textContent="Code ist markiert. Kopiere ihn mit Strg+C oder durch langes Tippen.";};
+    try{navigator.clipboard.writeText(t.value).then(done,fall);}catch(e){fall();}});
   $("#b-load").addEventListener("click",()=>{const v=$("#code-in").value.trim();const m=$("#load-msg");
     try{const o=JSON.parse(decodeURIComponent(escape(atob(v))));if(typeof o!=="object"||!o||!("questions" in o))throw 0;S=Object.assign(blank(),o);save();render();}
     catch(e){m.className="no";m.textContent="Der Code passt nicht. Kopiere ihn noch einmal vollständig.";}});
@@ -586,7 +813,6 @@ function render(){
   const v=V[cur]||V.start;
   $("#view").innerHTML=v();
   if(v.after)v.after();
-  document.querySelectorAll("#nav button").forEach(b=>{if(b.dataset.go===cur||(cur==="nachtest"&&b.dataset.go==="laufzettel"))b.setAttribute("aria-current","step");});
 }
 render();
 })();
